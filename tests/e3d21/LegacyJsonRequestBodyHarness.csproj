@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="LegacyJsonRequestBodyHarness.cs" />
+    <Compile Include="../../bridge/E3dHttpAdapter.cs" Link="E3dHttpAdapter.cs" />
+  </ItemGroup>
+</Project>

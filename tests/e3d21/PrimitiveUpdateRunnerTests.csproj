@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <LangVersion>latest</LangVersion>
+    <DefineConstants>$(DefineConstants);PRIMITIVE_UPDATE_RUNNER_TESTS</DefineConstants>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="PrimitiveUpdateRunnerTests.cs" />
+    <Compile Include="../../bridge/e3d21/PrimitiveUpdateRunner.cs" Link="PrimitiveUpdateRunner.cs" />
+  </ItemGroup>
+</Project>

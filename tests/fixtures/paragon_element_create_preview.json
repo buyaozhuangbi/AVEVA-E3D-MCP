@@ -1,0 +1,41 @@
+{
+  "ok": true,
+  "version": "E3D21",
+  "session_id": "offline-session",
+  "bridge_build": "offline-build",
+  "result": {
+    "operation": "paragon_element_create_preview",
+    "requested_refno": "=1/100",
+    "requested_type": "SECT",
+    "target": {
+      "requested_refno": "=1/100",
+      "resolved_refno": "=1/100",
+      "resolved_name": "/CAT/SECTION",
+      "element_type": "CATA",
+      "database_type": "Catalogue",
+      "database_type_code": 2,
+      "target_matches_request": true,
+      "catalogue_target": true,
+      "errors": {},
+      "complete": true
+    },
+    "candidate": {"type": "SECT", "member_type": true, "sdk_is_creatable_now": true, "errors": {}, "complete": true},
+    "read_errors": {"target": {}, "candidate": {}},
+    "complete": true,
+    "success": true,
+    "read_only": true,
+    "preview_only": true,
+    "native_side_effects": false,
+    "execution_supported": false,
+    "scope": {
+      "kind": "paragon_element_create_preview",
+      "module": null,
+      "permissions_verified": null,
+      "revision": null,
+      "whole_project_coverage": false,
+      "pml_executed": false,
+      "element_creation_attempted": false,
+      "element_created": false
+    }
+  }
+}

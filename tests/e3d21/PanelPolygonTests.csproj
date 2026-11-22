@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <LangVersion>latest</LangVersion>
+    <DefineConstants>$(DefineConstants);PANEL_POLYGON_TESTS</DefineConstants>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="PanelPolygonTests.cs" />
+    <Compile Include="../../bridge/e3d21/PanelPolygon.cs" Link="PanelPolygon.cs" />
+  </ItemGroup>
+</Project>

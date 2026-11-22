@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <LangVersion>latest</LangVersion>
+    <DefineConstants>$(DefineConstants);MODEL_EDIT_INPUT_TESTS</DefineConstants>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="ModelEditInputTests.cs" />
+    <Compile Include="../../bridge/e3d21/ModelEditInput.cs" Link="ModelEditInput.cs" />
+    <Compile Include="../../bridge/e3d21/AttributeEditPolicy.cs" Link="AttributeEditPolicy.cs" />
+  </ItemGroup>
+</Project>

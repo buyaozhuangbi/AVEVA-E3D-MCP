@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <LangVersion>latest</LangVersion>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <DefineConstants>$(DefineConstants);COMMAND_BATCH_RUNNER_TESTS</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="CommandBatchRunnerTests.cs" />
+    <Compile Include="../../bridge/e3d21/CommandBatchRunner.cs" Link="CommandBatchRunner.cs" />
+  </ItemGroup>
+</Project>

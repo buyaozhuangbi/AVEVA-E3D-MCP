@@ -1,0 +1,61 @@
+# Python caches and environments
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage*
+htmlcov/
+
+# .NET build output and local IDE state
+**/bin/
+**/obj/
+*.dll
+*.exe
+*.pdb
+*.user
+*.suo
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+/profiles/
+*.pfx
+*.p12
+*.pem
+*.key
+
+# Local build outputs, evidence, run data and scratch work
+artifacts/
+build/
+/prototypes/
+/scripts/
+/tmp-*
+/tmp_*
+*.log
+
+# Tests requiring ignored local evidence or live-operation scripts
+/tests/test_buffer_copy_contracts.py
+/tests/test_generated_csg_catalog_compatibility.py
+/tests/test_generated_csg_facet_transport.py
+/tests/test_layout_tiles_nozzle_outline_tools.py
+/tests/test_location_sheet_tools.py
+/tests/test_material_assembly_sheet_tools.py
+/tests/test_material_assembly_tools.py
+/tests/test_material_assembly_tiles_tools.py
+/tests/test_outline_axis_tools.py
+/tests/test_panel_curve_drawing.py
+/tests/test_panel_curve_boundary.py
+/tests/test_primitive_csg_mesh.py
+/tests/test_primitive_csg_tools.py
+/tests/test_modeling_plans_readonly_script.py
+/tests/test_native_clash_equi_journal.py
+/bridge/README.md
+/bridge/e3d21/README.md
+/bridge/e3d21/COPYING.md
+/tests/fixtures/e3d21/NativeClashPreSuspensionHarness.cs.txt
+/tests/test_admin140_area_options_prototype.py

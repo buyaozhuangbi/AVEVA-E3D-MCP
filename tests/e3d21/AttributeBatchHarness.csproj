@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <LangVersion>latest</LangVersion>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="AttributeBatchHarness.cs" />
+    <Compile Include="../../bridge/e3d21/E3d21AttributeBatchEditing.cs" Link="E3d21AttributeBatchEditing.cs" />
+    <Compile Include="../../bridge/e3d21/AttributeEditPolicy.cs" Link="AttributeEditPolicy.cs" />
+  </ItemGroup>
+</Project>

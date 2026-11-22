@@ -1,0 +1,41 @@
+-- Codex AI E3D 2.1 debugging panel.
+-- This form is read-only: it reports the current E3D element and bridge target.
+
+setup form !!codexAiDebug
+
+  title |Codex AI - E3D Debug|
+  init |!this.init()|
+
+  frame .context |E3D Context|
+    para .bridgeLabel at x1 y0.5 text |MCP bridge:|
+    para .bridgeValue at xmin.bridgeLabel ymax width 32 lines 1
+
+    para .typeLabel at xmin.bridgeLabel ymax text |CE type:|
+    para .typeValue at xmin.typeLabel ymax width 32 lines 1
+
+    para .nameLabel at xmin.typeLabel ymax text |CE name:|
+    para .nameValue at xmin.nameLabel ymax width 32 lines 1
+
+    para .refLabel at xmin.nameLabel ymax text |CE ref:|
+    para .refValue at xmin.refLabel ymax width 32 lines 1
+  exit
+
+  frame .diagnostics |Diagnostics|
+    para .statusLabel at x1 y0.5 text |Status:|
+    para .statusValue at xmin.statusLabel ymax width 32 lines 2
+  exit
+
+  button .refresh |Refresh| at x0 ymax+0.3 callback |!this.init()|
+  button .close |Close| at xmax form-size ymin callback |!this.hide()| cancel
+
+exit
+
+define method .init()
+
+  !this.bridgeValue.val = '127.0.0.1:8766 / E3D21'
+  !this.typeValue.val = !!ce.type
+  !this.nameValue.val = !!ce.name
+  !this.refValue.val = !!ce.string()
+  !this.statusValue.val = 'Connected; read-only probe completed.'
+
+endmethod

@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <LangVersion>latest</LangVersion>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="NativeDatabaseFaultStateTests.cs" />
+    <Compile Include="../../bridge/e3d21/NativeDatabaseFaultState.cs" Link="NativeDatabaseFaultState.cs" />
+  </ItemGroup>
+</Project>

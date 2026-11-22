@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <LangVersion>latest</LangVersion>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="../../bridge/e3d21/BoundedHierarchy.cs" Link="BoundedHierarchy.cs" />
+    <Compile Include="../../bridge/e3d21/MemberPage.cs" Link="MemberPage.cs" />
+    <Compile Include="../../bridge/e3d21/AttributeEditPolicy.cs" Link="AttributeEditPolicy.cs" />
+  </ItemGroup>
+</Project>

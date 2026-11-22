@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <LangVersion>latest</LangVersion>
+    <DefineConstants>$(DefineConstants);PANEL_UPDATE_RUNNER_TESTS</DefineConstants>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="PanelUpdateRunnerTests.cs" />
+    <Compile Include="../../bridge/e3d21/PanelUpdateRunner.cs" Link="PanelUpdateRunner.cs" />
+  </ItemGroup>
+</Project>

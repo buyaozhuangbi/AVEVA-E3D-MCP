@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <OutputType>Library</OutputType>
+    <LangVersion>latest</LangVersion>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <AssemblyName>TeamDatabaseIdentitySdkContract</AssemblyName>
+    <E3D21_ROOT Condition="'$(E3D21_ROOT)' == ''">C:\Program Files (x86)\AVEVA\Everything3D2.10</E3D21_ROOT>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="TeamDatabaseIdentityManifestSdkCompile.cs" />
+    <Compile Include="../../bridge/e3d21/TeamDatabaseIdentityManifest.cs" Link="TeamDatabaseIdentityManifest.cs" />
+    <Compile Include="../../bridge/e3d21/E3d21TeamDatabaseIdentityManifest.cs" Link="E3d21TeamDatabaseIdentityManifest.cs" />
+    <Compile Include="../../bridge/e3d21/NativeDatabaseFaultState.cs" Link="NativeDatabaseFaultState.cs" />
+    <Compile Include="../../bridge/e3d21/DatabaseStateRequest.cs" Link="DatabaseStateRequest.cs" />
+    <Reference Include="Aveva.Core.Database">
+      <HintPath>$(E3D21_ROOT)\Aveva.Core.Database.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+</Project>

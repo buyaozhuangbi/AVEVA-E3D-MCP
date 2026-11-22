@@ -1,0 +1,158 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>E3d21AiAddin</AssemblyName>
+    <RootNamespace>E3d21AiBridge</RootNamespace>
+    <E3D21_ROOT Condition="'$(E3D21_ROOT)' == ''">C:\Program Files (x86)\AVEVA\Everything3D2.10</E3D21_ROOT>
+    <ReferencePath>$(E3D21_ROOT)</ReferencePath>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="E3d21HttpAdapter.cs" />
+    <Compile Include="E3d21Context.cs" />
+    <Compile Include="E3d21PmlScript.cs" />
+    <Compile Include="PmlScriptInput.cs" />
+    <Compile Include="PmlScriptJson.cs" />
+    <Compile Include="PmlScriptReceiptStore.cs" />
+    <Compile Include="MessageCursor.cs" />
+    <Compile Include="E3d21AiAddin.cs" />
+    <Compile Include="BoundedHierarchy.cs" />
+    <Compile Include="MemberPage.cs" />
+    <Compile Include="E3d21Schema.cs" />
+    <Compile Include="AttributeEditPolicy.cs" />
+    <Compile Include="CommandBatchRunner.cs" />
+    <Compile Include="E3d21ModelEditing.cs" />
+    <Compile Include="ModelEditInput.cs" />
+    <Compile Include="E3d21ViewCapture.cs" />
+    <Compile Include="E3d21ViewCamera.cs" />
+    <Compile Include="E3d21ViewClippingState.cs" />
+    <Compile Include="E3d21CameraEditing.cs" />
+    <Compile Include="E3d21PanelGeometry.cs" />
+    <Compile Include="E3d21PanelBoundaryPoints.cs" />
+    <Compile Include="E3d21PanelEditing.cs" />
+    <Compile Include="PanelUpdateRunner.cs" />
+    <Compile Include="PanelPolygon.cs" />
+    <Compile Include="E3d21GeometryBounds.cs" />
+    <Compile Include="E3d21GeometryOverlap.cs" />
+    <Compile Include="E3d21NativeClash.cs" />
+    <Compile Include="NativeClashResources.cs" />
+    <Compile Include="E3d21GraphicalSelection.cs" />
+    <Compile Include="E3d21SelectionEditing.cs" />
+    <Compile Include="E3d21MeasureBatch.cs" />
+    <Compile Include="E3d21CoordinateTransform.cs" />
+    <Compile Include="CoordinateTransformMath.cs" />
+    <Compile Include="E3d21ElementAccess.cs" />
+    <Compile Include="E3d21GeometryVolume.cs" />
+    <Compile Include="E3d21ConnectionPoints.cs" />
+    <Compile Include="E3d21ConnectionTrace.cs" />
+    <Compile Include="E3d21PrimitiveEditing.cs" />
+    <Compile Include="E3d21GeneratedCsg.cs" />
+    <Compile Include="PrimitiveUpdateRunner.cs" />
+    <Compile Include="E3d21DescendantSearch.cs" />
+    <Compile Include="DescendantSearchPage.cs" />
+    <Compile Include="E3d21EquipmentManifest.cs" />
+    <Compile Include="EquipmentManifest.cs" />
+    <Compile Include="EquipmentChildSchema.cs" />
+    <Compile Include="E3d21EquipmentChildSchema.cs" />
+    <Compile Include="E3d21PipeMemberManifest.cs" />
+    <Compile Include="PipeMemberManifest.cs" />
+    <Compile Include="ParagonCatalogueManifest.cs" />
+    <Compile Include="E3d21ParagonCatalogueManifest.cs" />
+    <Compile Include="ModuleContext.cs" />
+    <Compile Include="E3d21ModuleContext.cs" />
+    <Compile Include="ParagonCatalogueSchema.cs" />
+    <Compile Include="E3d21ParagonCatalogueSchema.cs" />
+    <Compile Include="ParagonComponentTemplate.cs" />
+    <Compile Include="E3d21ParagonComponentTemplate.cs" />
+    <Compile Include="ConnectivitySnapshot.cs" />
+    <Compile Include="E3d21ConnectivitySnapshot.cs" />
+    <Compile Include="PipingSpecificationReadRequest.cs" />
+    <Compile Include="E3d21PipingSpecificationRead.cs" />
+    <Compile Include="E3d21CopyEditing.cs" />
+    <Compile Include="CopyTreePolicy.cs" />
+    <Compile Include="E3d21DisplayState.cs" />
+    <Compile Include="E3d21PrimitiveVisual.cs" />
+    <Compile Include="E3d21DrawListRemoval.cs" />
+    <Compile Include="E3d21AttributeBatchEditing.cs" />
+    <Compile Include="NativeDatabaseFaultState.cs" />
+    <Compile Include="E3d21NativeDialogs.cs" />
+    <Compile Include="E3d21PmlAlerts.cs" />
+    <Compile Include="E3d21DatabaseState.cs" />
+    <Compile Include="E3d21ProjectCatalogProbe.cs" />
+    <Compile Include="TeamDatabaseIdentityManifest.cs" />
+    <Compile Include="E3d21TeamDatabaseIdentityManifest.cs" />
+    <Compile Include="E3d21SpatialMapStatus.cs" />
+    <Compile Include="DatabaseStateRequest.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="Aveva.ApplicationFramework">
+      <HintPath>$(E3D21_ROOT)\Aveva.ApplicationFramework.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Aveva.ApplicationFramework.Presentation">
+      <HintPath>$(E3D21_ROOT)\Aveva.ApplicationFramework.Presentation.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Aveva.Core.Database">
+      <HintPath>$(E3D21_ROOT)\Aveva.Core.Database.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Aveva.E3D.Implementation">
+      <HintPath>$(E3D21_ROOT)\Aveva.E3D.Implementation.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Aveva.E3D.Standalone">
+      <HintPath>$(E3D21_ROOT)\Aveva.E3D.Standalone.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Aveva.Core.Utilities">
+      <HintPath>$(E3D21_ROOT)\Aveva.Core.Utilities.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Aveva.Core.Geometry">
+      <HintPath>$(E3D21_ROOT)\Aveva.Core.Geometry.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Aveva.Core.Geometry.Implementation">
+      <HintPath>$(E3D21_ROOT)\Aveva.Core.Geometry.Implementation.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Aveva.Core.Maths.Geometry">
+      <HintPath>$(E3D21_ROOT)\Aveva.Core.Maths.Geometry.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Aveva.Core3D.Graphics">
+      <HintPath>$(E3D21_ROOT)\Aveva.Core3D.Graphics.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Aveva.Core3D.Clasher">
+      <HintPath>$(E3D21_ROOT)\Aveva.Core3D.Clasher.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Aveva.Core3D.CSG">
+      <HintPath>$(E3D21_ROOT)\Aveva.Core3D.CSG.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Aveva.CIE.Interaction.Engine">
+      <HintPath>$(E3D21_ROOT)\Aveva.CIE.Interaction.Engine.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Aveva.CIE.Foundation.Basic">
+      <HintPath>$(E3D21_ROOT)\Aveva.CIE.Foundation.Basic.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Aveva.CIE.Interaction.UI">
+      <HintPath>$(E3D21_ROOT)\Aveva.CIE.Interaction.UI.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>$(E3D21_ROOT)\Newtonsoft.Json.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+</Project>

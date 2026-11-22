@@ -1,0 +1,21 @@
+<Project>
+  <PropertyGroup>
+    <BaseIntermediateOutputPath>obj/GeneratedCsgHarness/</BaseIntermediateOutputPath>
+    <BaseOutputPath>bin/GeneratedCsgHarness/</BaseOutputPath>
+  </PropertyGroup>
+  <Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk" />
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <LangVersion>latest</LangVersion>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="GeneratedCsgHarness.cs" />
+    <Compile Include="../../bridge/e3d21/E3d21GeneratedCsg.cs" Link="E3d21GeneratedCsg.cs" />
+    <Compile Include="../../bridge/e3d21/NativeDatabaseFaultState.cs" Link="NativeDatabaseFaultState.cs" />
+    <Compile Include="../../bridge/e3d21/ModelEditInput.cs" Link="ModelEditInput.cs" />
+    <Compile Include="../../bridge/e3d21/AttributeEditPolicy.cs" Link="AttributeEditPolicy.cs" />
+  </ItemGroup>
+  <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
+</Project>

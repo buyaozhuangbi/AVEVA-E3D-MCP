@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <LangVersion>latest</LangVersion>
+    <DefineConstants>$(DefineConstants);VIEW_CLIPPING_STATE_TESTS</DefineConstants>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="ViewClippingStateTests.cs" />
+    <Compile Include="../../bridge/e3d21/E3d21ViewClippingState.cs" Link="E3d21ViewClippingState.cs" />
+  </ItemGroup>
+</Project>
