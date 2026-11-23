@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -52,8 +53,11 @@ def component_template_receipts():
         output = "\n".join(line for line in ran.stdout.splitlines() if not line.startswith("Component template receipt: "))
         assert ran.returncode == 0, output + ran.stderr
         assert "Component template production checks passed:" in output
-        assert "Component template native fault matrix: 741 read positions / 1482 return-or-throw cases" in output
-        assert "Component template owned core native fault matrix: 741 read positions / 1482 return-or-throw cases" in output
+        for label in ("native fault matrix", "owned core native fault matrix"):
+            matrix = re.search(rf"Component template {label}: (\d+) read positions / (\d+) return-or-throw cases", output)
+            assert matrix is not None, output
+            positions, cases = map(int, matrix.groups())
+            assert positions > 741 and cases == positions * 2, output
         assert "Component template owned core checks passed:" in output
         print(output)
         return [json.loads(line.removeprefix("Component template receipt: ")) for line in ran.stdout.splitlines()
@@ -107,6 +111,34 @@ def test_every_public_native_template_receipt_still_satisfies_python_contract(co
             pytest.fail(f"Production public component template receipt {index}: {error}")
         assert json.dumps(receipt, sort_keys=True) == before
     print(f"Validated all {len(component_template_receipts)} unchanged public template receipts through Python.")
+
+
+def test_native_unset_is_exact_value_evidence_and_unknown_handles_stay_partial(component_template_receipts):
+    results = [case["reply"]["result"] for case in component_template_receipts]
+    scalar = next(result for result in results
+                  if result["references"]["PTREF"]["values"]
+                  and result["references"]["PTREF"]["values"][0]["status"] == "unset")
+    assert scalar["references"]["PTREF"]["values"][0] == {
+        "index": 0, "status": "unset", "identity": None, "reference_null": True, "error": None,
+    }
+    assert scalar["references"]["PTREF"]["status"] == "observed"
+    assert scalar["references"]["PTREF"]["complete"] is True
+    assert scalar["complete"] is True
+    arrays = [result["references"]["BLRFA"] for result in results]
+    assert any([row["status"] for row in value["values"]] == ["observed", "unset", "observed"]
+               and value["complete"] is True for value in arrays)
+    assert any([row["status"] for row in value["values"]] == ["unset", "unset"]
+               and value["complete"] is True for value in arrays)
+    assert any(value["total_count"] is None and value["reference_null"] is None
+               and value["errors"].get("value") == "native_reference_handle_unknown"
+               and value["complete"] is False for value in arrays)
+    rows = [row for result in results for value in result["references"].values() for row in value["values"]]
+    assert any(row["status"] == "unknown" and row["reference_null"] is None
+               and row["error"] == "native_reference_handle_unknown" for row in rows)
+    assert any(row["status"] == "unknown" and row["reference_null"] is True
+               and row["error"] == "native_null_reference_dbref_unknown" for row in rows)
+    assert any(row["status"] == "unknown" and row["reference_null"] is True
+               and row["error"] == "unset native Ref getter failed" for row in rows)
 
 
 def test_template_core_retains_only_existing_native_scope_and_no_command_or_dispatch_shell():

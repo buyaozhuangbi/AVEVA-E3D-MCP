@@ -79,7 +79,7 @@ class TeamDatabaseIdentityHttpContractTests(unittest.TestCase):
         # The managed production request/interface supplies validation. The SDK
         # reader is intentionally absent from this project and from its inputs.
         names = (
-            "TeamDatabaseIdentityManifest.cs", "ParagonComponentTemplate.cs", "ParagonReferenceTrace.cs", "PipingSpecificationReadRequest.cs", "ConnectivitySnapshot.cs", "ModuleContext.cs",
+            "TeamDatabaseIdentityManifest.cs", "ParagonComponentTemplate.cs", "ParagonReferenceTrace.cs", "ParagonComponentCopy.cs", "PipingSpecificationReadRequest.cs", "ConnectivitySnapshot.cs", "ModuleContext.cs",
             "ParagonCatalogueSchema.cs", "ParagonCatalogueManifest.cs", "NativeDatabaseFaultState.cs",
             "MessageCursor.cs", "EquipmentManifest.cs", "EquipmentChildSchema.cs", "PipeMemberManifest.cs", "ModelEditInput.cs",
             "AttributeEditPolicy.cs",

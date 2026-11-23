@@ -64,10 +64,10 @@ namespace Aveva.Core.Database
         internal DbElement(int id, string kind) { Id = id; Kind = kind; }
         internal string Key => "element." + Id;
         public static DbElement GetElement(int[] pair) => Scenario.Read("element.resolve", Scenario.Root);
-        public bool IsNull => Scenario.Read(Key + ".null", false);
+        public bool IsNull => Scenario.Read(Key + ".null", Id == 0);
         public bool IsValid => Scenario.Read(Key + ".valid", true);
         public bool IsDeleted => Scenario.Read(Key + ".deleted", false);
-        public int[] Ref => Scenario.Read(Key + ".ref", new[] { Id == 9 ? 1 : 2, Id });
+        public int[] Ref => Scenario.Read(Key + ".ref", Id == 0 ? new[] { 0, 0 } : new[] { Id == 9 ? 1 : 2, Id });
         public DbType DbType => Scenario.Read(Key + ".db_type", Id == 9 ? DbType.Design : DbType.Catalogue);
         public DbElementType GetElementType() => Scenario.Read(Key + ".base_type", Scenario.Types[Kind]);
         public DbElementType GetActualType() => Scenario.Read(Key + ".actual_type", Scenario.Types[Kind]);
@@ -107,7 +107,7 @@ internal static class Scenario
     internal static readonly Dictionary<string, DbAttribute> Attributes = new Dictionary<string, DbAttribute>();
     internal static Project Project;
     internal static MDB Mdb;
-    internal static DbElement Root, Ce, Reference;
+    internal static DbElement Root, Ce, Reference, Unset;
     internal static Action<string> OnRead;
     internal static bool Busy, BusyOnUi;
     internal static int UiDepth, Dispatches, ForbiddenCalls;
@@ -127,7 +127,7 @@ internal static class Scenario
         foreach (string type in new[] { "SCOM", "CATE", "GMSE", "EQUI", ":CUSTOM_SCOM" }) Types[type] = new DbElementType(type);
         foreach (string name in new[] { "PARAM", "PTREF", "GMREF", "DTREF", "BLRFA", "NGMREF", "PSTREF", "GSTREF" }) Attributes[name] = new DbAttribute(name);
         Project = new Project(); Mdb = new MDB(); Root = new DbElement(1, "SCOM");
-        Ce = new DbElement(9, "EQUI"); Reference = new DbElement(2, "GMSE");
+        Ce = new DbElement(9, "EQUI"); Reference = new DbElement(2, "GMSE"); Unset = new DbElement(0, "GMSE");
         OnRead = null; Busy = BusyOnUi = false; UiDepth = Dispatches = ForbiddenCalls = 0;
     }
 }
@@ -309,9 +309,11 @@ internal static class ParagonComponentTemplateHarness
         Scenario.Reset(); Scenario.Overrides["element.1.supports.PARAM"] = false; row = Read();
         Check(!(bool)row["parameters"]["supported"] && !Scenario.Reads.Contains("element.1.double_array.PARAM"), "Unsupported PARAM invoked value getter.");
         Scenario.Reset(); Scenario.Overrides["element.1.scalar.PTREF"] = null; row = Read();
-        Check((bool)row["references"]["PTREF"]["reference_null"] && (string)row["references"]["PTREF"]["values"][0]["status"] == "unknown", "Null reference became observed identity.");
+        Check(Null(row["references"]["PTREF"]["reference_null"]) && (string)row["references"]["PTREF"]["values"][0]["status"] == "unknown"
+            && (string)row["references"]["PTREF"]["values"][0]["error"] == "native_reference_handle_unknown", "CLR null reference became an observed native null value.");
         Scenario.Reset(); Scenario.Overrides["element.1.array.BLRFA"] = null; row = Read();
-        Check(Null(row["references"]["BLRFA"]["total_count"]) && (bool)row["references"]["BLRFA"]["reference_null"], "Null reference array became empty observed array.");
+        Check(Null(row["references"]["BLRFA"]["total_count"]) && Null(row["references"]["BLRFA"]["reference_null"])
+            && !(bool)row["references"]["BLRFA"]["complete"], "CLR null reference array became an observed empty array.");
         Scenario.Reset(); Scenario.Overrides["element.1.array.BLRFA"] = new DbElement[0]; row = Read();
         Check((int)row["references"]["BLRFA"]["total_count"] == 0 && (bool)row["references"]["BLRFA"]["complete"], "Empty array became unknown.");
         Scenario.Reset(); Scenario.Overrides["element.1.array.BLRFA"] = Enumerable.Repeat(Scenario.Reference, 17).ToArray(); row = Read();
@@ -340,10 +342,93 @@ internal static class ParagonComponentTemplateHarness
         Scenario.Reset(); Scenario.Overrides["mdb.current"] = null; row = Read();
         Check(Null(row["target"]) && !Scenario.Reads.Contains("element.resolve") && Null(row["context"]["same_mdb_instance"]), "Missing MDB resolved native target.");
     }
+    private static void ConfigureUnsetReferences(bool allAttributes)
+    {
+        Scenario.Overrides["element.1.scalar.PTREF"] = Scenario.Unset;
+        Scenario.Overrides["element.1.array.BLRFA"] = new[] { Scenario.Unset, Scenario.Reference, Scenario.Unset };
+        if (allAttributes)
+        {
+            foreach (string name in ParagonComponentTemplateRequest.ReferenceAttributes.Where(name => name != "BLRFA"))
+                Scenario.Overrides["element.1.scalar." + name] = Scenario.Unset;
+            Scenario.Overrides["element.1.array.BLRFA"] = new[] { Scenario.Unset, Scenario.Unset };
+        }
+    }
+    private static void CheckUnset(JToken row, int index, string message)
+    {
+        Check((int)row["index"] == index && (string)row["status"] == "unset" && (bool?)row["reference_null"] == true
+            && Null(row["identity"]) && Null(row["error"]), message);
+    }
+    private static void UnsetReferenceCases()
+    {
+        Scenario.Reset(); Scenario.Overrides["element.1.scalar.PTREF"] = Scenario.Unset;
+        JObject row = Read(); JToken attribute = row["references"]["PTREF"];
+        CheckUnset(attribute["values"][0], 0, "SDK null/[0,0] scalar did not retain the observed unset value.");
+        Check((bool)attribute["reference_null"] && (bool)attribute["complete"] && (string)attribute["status"] == "observed"
+            && (bool)row["complete"], "Observed unset scalar did not count as complete value evidence.");
+        Check(Scenario.Reads.Where(key => key.StartsWith("element.0.")).SequenceEqual(new[] { "element.0.null", "element.0.ref" }),
+            "Observed unset required anything beyond IsNull and the exact native null DBREF.");
+
+        Scenario.Reset(); Scenario.Overrides["element.1.array.BLRFA"] = new[] { Scenario.Reference, Scenario.Unset, new DbElement(3, "GMSE") };
+        row = Read(); attribute = row["references"]["BLRFA"];
+        Check((int)attribute["total_count"] == 3 && (int)attribute["returned_count"] == 3 && (bool)attribute["complete"]
+            && Null(attribute["reference_null"]) && (bool)attribute["native_array_materialized"], "Mixed native reference array lost shape, order or completeness.");
+        Check((string)attribute["values"][0]["identity"]["refno"] == "=2/2"
+            && (string)attribute["values"][2]["identity"]["refno"] == "=2/3", "Mixed array changed non-null target identities.");
+        CheckUnset(attribute["values"][1], 1, "Mixed array null item was discarded or treated as a missing identity read.");
+
+        Scenario.Reset(); ConfigureUnsetReferences(true); row = Read();
+        foreach (string name in ParagonComponentTemplateRequest.ReferenceAttributes)
+        {
+            attribute = row["references"][name];
+            Check((bool)attribute["complete"] && (string)attribute["status"] == "observed", "All-unset attribute did not retain complete value coverage: " + name);
+            for (int index = 0; index < (int)attribute["returned_count"]; index++)
+                CheckUnset(attribute["values"][index], index, "Fully null native array/scalar item was not observed unset.");
+        }
+        Check((bool)row["complete"] && (bool)row["success"], "Complete native unset values made the overall bounded observation partial.");
+
+        Scenario.Reset(); Scenario.Overrides["element.1.array.BLRFA"] = new[] { Scenario.Reference, (DbElement)null, Scenario.Unset };
+        row = Read(); attribute = row["references"]["BLRFA"];
+        Check((string)attribute["values"][1]["status"] == "unknown" && Null(attribute["values"][1]["reference_null"])
+            && (string)attribute["values"][1]["error"] == "native_reference_handle_unknown" && !(bool)attribute["complete"],
+            "CLR null array handle was promoted to known unset or erased its sibling evidence.");
+        CheckUnset(attribute["values"][2], 2, "Independent SDK null item was lost after a CLR null item.");
+        Check((string)attribute["values"][0]["identity"]["refno"] == "=2/2", "CLR null array item erased a valid preceding reference.");
+
+        Scenario.Reset(); Scenario.Overrides["element.1.array.BLRFA"] = new DbElement[] { null, null };
+        row = Read(); attribute = row["references"]["BLRFA"];
+        Check((int)attribute["total_count"] == 2 && (int)attribute["returned_count"] == 2 && !(bool)attribute["complete"]
+            && attribute["values"].All(item => (string)item["status"] == "unknown" && Null(item["reference_null"])
+                && (string)item["error"] == "native_reference_handle_unknown"), "Fully CLR null array items became an empty or complete observed array.");
+
+        foreach (bool array in new[] { false, true })
+            foreach (object pair in new object[] { null, new int[0], new[] { 0 }, new[] { 0, 0, 0 }, new[] { 0, 1 }, new[] { 1, 0 }, new[] { 2, 3 },
+                new[] { -1, 0 }, new InvalidOperationException("unset native Ref getter failed") })
+            {
+                Scenario.Reset();
+                Scenario.Overrides[array ? "element.1.array.BLRFA" : "element.1.scalar.PTREF"] = array ? (object)new[] { Scenario.Unset } : Scenario.Unset;
+                Scenario.Overrides["element.0.ref"] = pair; row = Read(); attribute = row["references"][array ? "BLRFA" : "PTREF"];
+                JToken value = attribute["values"][0];
+                Check((string)value["status"] == "unknown" && (bool?)value["reference_null"] == true && Null(value["identity"])
+                    && !Null(value["error"]) && ((string)value["error"]).Length > 0 && !(bool)attribute["complete"] && !(bool)row["complete"],
+                    "Malformed/failed null sentinel DBREF was promoted to observed unset.");
+                Check(Scenario.Reads.Where(key => key.StartsWith("element.0.")).SequenceEqual(new[] { "element.0.null", "element.0.ref" }),
+                    "Unknown null sentinel touched identity metadata after the failed DBREF proof.");
+            }
+        foreach (bool array in new[] { false, true })
+        {
+            Scenario.Reset();
+            Scenario.Overrides[array ? "element.1.array.BLRFA" : "element.1.scalar.PTREF"] = array ? (object)new[] { Scenario.Unset } : Scenario.Unset;
+            Scenario.Overrides["element.0.null"] = new InvalidOperationException("native IsNull getter failed");
+            row = Read(); attribute = row["references"][array ? "BLRFA" : "PTREF"];
+            Check((string)attribute["values"][0]["status"] == "unknown" && Null(attribute["values"][0]["reference_null"])
+                && (string)attribute["values"][0]["error"] == "native IsNull getter failed" && !Scenario.Reads.Contains("element.0.ref")
+                && !(bool)attribute["complete"], "Failed IsNull getter invented nullness or performed a later Ref read.");
+        }
+    }
     private static void FaultMatrix()
     {
         int positions = 0, cases = 0;
-        foreach (int path in new[] { 0, 1, 2 })
+        foreach (int path in new[] { 0, 1, 2, 3, 4 })
         {
             Action setup = () =>
             {
@@ -351,6 +436,8 @@ internal static class ParagonComponentTemplateHarness
                 if (path == 1) { Scenario.Overrides["element.1.member1"] = Scenario.Reference;
                     Scenario.Overrides["element.1.array.BLRFA"] = new[] { Scenario.Reference, new DbElement(3, "GMSE") }; }
                 if (path == 2) Scenario.Overrides["element.1.actual_type"] = Scenario.Types[":CUSTOM_SCOM"];
+                if (path == 3) ConfigureUnsetReferences(false);
+                if (path == 4) ConfigureUnsetReferences(true);
             };
             setup(); new E3d21Context().ReadParagonComponentTemplate("=2/1", Session);
             int total = Scenario.Reads.Count; positions += total;
@@ -368,7 +455,7 @@ internal static class ParagonComponentTemplateHarness
                     cases++;
                 }
         }
-        Check(positions == 741 && cases == 1482, "The public reader native-fault matrix lost production SDK read positions.");
+        Check(positions >= 741 && cases == positions * 2, "The public reader native-fault matrix lost production SDK read positions.");
         Console.WriteLine("Component template native fault matrix: " + positions + " read positions / " + cases + " return-or-throw cases; every fault stopped immediately and refused replay.");
     }
     private static void OwnedCore()
@@ -436,7 +523,7 @@ internal static class ParagonComponentTemplateHarness
     private static void OwnedCoreFaultMatrix()
     {
         int positions = 0, cases = 0;
-        foreach (int path in new[] { 0, 1, 2 })
+        foreach (int path in new[] { 0, 1, 2, 3, 4 })
         {
             Action setup = () =>
             {
@@ -444,6 +531,8 @@ internal static class ParagonComponentTemplateHarness
                 if (path == 1) { Scenario.Overrides["element.1.member1"] = Scenario.Reference;
                     Scenario.Overrides["element.1.array.BLRFA"] = new[] { Scenario.Reference, new DbElement(3, "GMSE") }; }
                 if (path == 2) Scenario.Overrides["element.1.actual_type"] = Scenario.Types[":CUSTOM_SCOM"];
+                if (path == 3) ConfigureUnsetReferences(false);
+                if (path == 4) ConfigureUnsetReferences(true);
             };
             setup(); new E3d21Context().ReadTemplateFromOwnedScope("=2/1", Session);
             int total = Scenario.Reads.Count; positions += total;
@@ -463,12 +552,12 @@ internal static class ParagonComponentTemplateHarness
                     cases++;
                 }
         }
-        Check(positions == 741 && cases == 1482, "The owned core native-fault matrix lost production SDK read positions.");
+        Check(positions >= 741 && cases == positions * 2, "The owned core native-fault matrix lost production SDK read positions.");
         Console.WriteLine("Component template owned core native fault matrix: " + positions + " read positions / " + cases + " return-or-throw cases; every fault stopped immediately and refused replay.");
     }
     private static int Main()
     {
-        try { Validation(); Cases(); FaultMatrix(); OwnedCore(); OwnedCoreFaultMatrix(); Console.WriteLine("Component template production checks passed: " + assertions + " assertions / " + receipts + " receipts."); return 0; }
+        try { Validation(); Cases(); UnsetReferenceCases(); FaultMatrix(); OwnedCore(); OwnedCoreFaultMatrix(); Console.WriteLine("Component template production checks passed: " + assertions + " assertions / " + receipts + " receipts."); return 0; }
         catch (Exception error) { Console.Error.WriteLine(error); return 1; }
     }
 }

@@ -37,7 +37,7 @@ class CameraEditingToolTests(unittest.TestCase):
 
     def test_discovery_required_fields_preview_revision_and_capture(self):
         catalog = self.rpc("tools/list", {})["tools"]
-        self.assertEqual(len(catalog), 115)
+        self.assertEqual(len(catalog), 117)
         self.assertEqual(sum("capture_after" in t["inputSchema"]["properties"] for t in catalog), 19)
         tool = next(t for t in catalog if t["name"] == "e3d_set_camera")
         schema = tool["inputSchema"]

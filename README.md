@@ -2,7 +2,7 @@
 
 面向 AVEVA Everything3D（E3D）的模型开发与调试 MCP 服务。Python MCP server 通过标准输入/输出（stdio）连接 Codex、Claude Desktop、Cursor 等客户端；需要读取真实 E3D 状态时，再由 E3D 进程内的 .NET Addin 提供本机 HTTP bridge。
 
-当前 MCP catalog 注册 **115 个工具**。`tools/list` 返回的工具定义和可选功能是当前实例能力的权威来源；实际能力受 E3D 版本、加载的 Addin 和配置影响。Python distribution metadata 当前版本为 `0.1.0`（见 `pyproject.toml`）；它不是 E3D Addin build 版本。
+当前 MCP catalog 注册 **117 个工具**。`tools/list` 返回的工具定义和可选功能是当前实例能力的权威来源；实际能力受 E3D 版本、加载的 Addin 和配置影响。Python distribution metadata 当前版本为 `0.1.0`（见 `pyproject.toml`）；它不是 E3D Addin build 版本。
 
 ## 能力概览
 
@@ -12,7 +12,9 @@
 - **几何与图纸**：提供有界几何观察、尺寸与连接点读取，以及参数化几何、剖面、装配、布置图和可选 SVG/DXF/PNG 输出。派生网格或图纸不等同于 E3D 原生几何或工程验收。
 - **受控编辑与 PML**：catalog 也包含明确目标的编辑、复制、显示/视图操作和 PML 工具。是否可执行由运行模式、工具参数和权限开关共同控制；请在真实会话里逐项检查目标与回执。
 
-PARAGON 的 Catalogue 数据库由用户在 E3D ADMIN 中配置。本服务不会替用户配置 ADMIN，也不会由生成计划创建数据库、CATE 或元件。该计划只生成候选草稿，不会自动提交 PML 预览或执行。
+PARAGON 的 Catalogue 数据库由用户在 E3D ADMIN 中配置。`e3d_paragon_generation_plan` 仍只生成候选草稿。新增的 `e3d_paragon_component_copy` 则提供实际生成新 SCOM 的执行路径：在同一 CATE 下复制现有模板、分配新名称，并独立回读新 REF、owner、PARAM 和规定范围内的引用。执行需要明确开启命令权限并提交原生预览的 session、build、revision 和唯一 request ID；服务不创建数据库或 CATE。
+
+`e3d_paragon_component_copy_status` 可在超时或故障后只读查询原请求账本，禁止自动重试。该能力的离线合同测试不代替隔离 Catalogue 实机验收，也不证明完整几何或工程等价。输入、执行步骤、回读范围及失败处理见[PARAGON 元件生成说明](docs/paragon-component-generation.md)。
 
 ### 管道与目录引用链
 

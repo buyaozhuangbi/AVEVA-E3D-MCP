@@ -303,7 +303,7 @@ public sealed partial class E3d21Context : IE3d21ParagonComponentTemplateContext
             if (array)
             {
                 native = NativeRead(() => element.GetElementArray(attribute));
-                if (native == null) { result["reference_null"] = true; throw new InvalidOperationException("The native reference array is null; its value remains unknown."); }
+                if (native == null) throw new InvalidOperationException("native_reference_handle_unknown");
                 if (!ComponentTemplateArrayBudget(result, native.Length, ParagonComponentTemplateRequest.MaximumReferenceItems)) return result;
             }
             else
@@ -319,18 +319,29 @@ public sealed partial class E3d21Context : IE3d21ParagonComponentTemplateContext
                 try
                 {
                     DbElement referenced = native[index];
-                    bool empty = ReferenceEquals(referenced, null) || NativeRead(() => referenced.IsNull);
+                    if (ReferenceEquals(referenced, null)) throw new InvalidOperationException("native_reference_handle_unknown");
+                    bool empty = NativeRead(() => referenced.IsNull);
                     row["reference_null"] = empty;
                     if (!array) result["reference_null"] = empty;
-                    if (empty) throw new InvalidOperationException("native_null_reference_value_unknown");
-                    var identity = ComponentTemplateIdentity(referenced);
-                    row["identity"] = identity;
-                    row["status"] = Equals(identity["complete"], true) ? "observed" : "partial";
-                    if (!Equals(identity["complete"], true)) row["error"] = "Reference identity metadata remains incomplete.";
+                    if (empty)
+                    {
+                        int[] pair = NativeRead(() => referenced.Ref);
+                        if (pair == null || pair.Length != 2 || pair[0] != 0 || pair[1] != 0)
+                            throw new InvalidOperationException("native_null_reference_dbref_unknown");
+                        row["status"] = "unset";
+                    }
+                    else
+                    {
+                        var identity = ComponentTemplateIdentity(referenced);
+                        row["identity"] = identity;
+                        row["status"] = Equals(identity["complete"], true) ? "observed" : "partial";
+                        if (!Equals(identity["complete"], true)) row["error"] = "Reference identity metadata remains incomplete.";
+                    }
                 }
                 catch (NativeDatabaseFaultException) { throw; }
                 catch (Exception error) { ThrowIfNativeFaulted(); row["error"] = ComponentTemplateError(error); }
-                if (!Equals(row["status"], "observed")) errors["items"] = "At least one returned reference identity remains unknown or partial.";
+                if (!Equals(row["status"], "observed") && !Equals(row["status"], "unset"))
+                    errors["items"] = "At least one returned reference identity remains unknown or partial.";
             }
             result["returned_count"] = values.Count;
             if (Equals(result["truncated"], true)) errors["output_limit"] = "Only the bounded reference-array prefix was returned.";

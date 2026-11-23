@@ -232,9 +232,13 @@ def _reference_item(value: Any, index: int, field: str) -> bool:
     row = _fields(value, {"index", "status", "identity", "reference_null", "error"}, field)
     _need(type(row["index"]) is int and row["index"] == index, field + " index")
     identity, is_null, error = row["identity"], row["reference_null"], row["error"]
+    if row["status"] == "unset":
+        _need(identity is None and is_null is True and error is None,
+              field + " observed unset reference value")
+        return True
     if identity is None:
         _need(row["status"] == "unknown" and (is_null is None or type(is_null) is bool)
-              and (_text(error, _MAX_ERROR) if is_null is not True else error == "native_null_reference_value_unknown"),
+              and _text(error, _MAX_ERROR),
               field + " unknown reference identity")
         return False
     complete, _ = _identity(identity, field + " identity")

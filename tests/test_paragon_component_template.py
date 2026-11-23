@@ -230,3 +230,81 @@ def test_inspection_cutoff_cannot_be_claimed_as_an_observed_empty_prefix(compone
     parameter["status"] = "observed"
     with pytest.raises(ValueError, match="materialized array not inspected"):
         _validate(limited["reply"], limited["payload"])
+
+
+def unset_row(index=0):
+    return {"index": index, "status": "unset", "identity": None, "reference_null": True, "error": None}
+
+
+@pytest.mark.parametrize("shape", ["scalar", "mixed_array", "all_unset_array", "all_attributes_unset"])
+def test_observed_unset_values_preserve_exact_nullness_without_an_identity(complete_case, shape):
+    reply, payload = complete_case["reply"], complete_case["payload"]
+    references = reply["result"]["references"]
+    if shape in {"scalar", "all_attributes_unset"}:
+        references["PTREF"]["values"] = [unset_row()]
+        references["PTREF"]["reference_null"] = True
+    if shape in {"mixed_array", "all_unset_array", "all_attributes_unset"}:
+        value = references["BLRFA"]
+        first = deepcopy(value["values"][0]) if shape == "mixed_array" else unset_row()
+        value["values"] = [first, unset_row(1)]
+        value["total_count"] = value["returned_count"] = 2
+    if shape == "all_attributes_unset":
+        for value in references.values():
+            value["values"] = [unset_row(index) for index in range(value["returned_count"])]
+            value["reference_null"] = True if value["shape"] == "element" else None
+    original = deepcopy(reply)
+    _validate(reply, payload)
+    assert reply["result"]["complete"] is True
+    assert all(value["complete"] is True for value in references.values())
+    bridge = BridgeClient(Settings(mode="bridge", version=VERSION, allow_commands=False))
+    with patch.object(bridge, "_request", return_value=reply) as request:
+        assert paragon_component_template(bridge, payload) is reply
+    request.assert_called_once_with("POST", PATH, payload, version=VERSION)
+    assert reply == original
+
+
+@pytest.mark.parametrize("nullness", [None, False, True])
+@pytest.mark.parametrize("error", ["native_null_reference_value_unknown", "native_reference_handle_unknown",
+                                  "unset native Ref getter failed", "x" * 4096, "😀" * 2048])
+def test_legacy_and_new_unknown_reference_errors_never_become_complete(complete_case, nullness, error):
+    reply, payload = complete_case["reply"], complete_case["payload"]
+    result = reply["result"]
+    value = result["references"]["PTREF"]
+    value["values"] = [{"index": 0, "status": "unknown", "identity": None, "reference_null": nullness, "error": error}]
+    value.update(reference_null=nullness, status="partial", complete=False, errors={"items": "Reference value remains unknown."})
+    result["complete"] = result["success"] = False
+    original = deepcopy(reply)
+    _validate(reply, payload)
+    assert value["values"][0]["status"] == "unknown"
+    assert value["complete"] is False and result["complete"] is False
+    assert reply == original
+    value.update(status="observed", complete=True, errors={})
+    result["complete"] = result["success"] = True
+    with pytest.raises(ValueError, match="typed value errors"):
+        _validate(reply, payload)
+
+
+@pytest.mark.parametrize("field, changed", [
+    ("reference_null", None), ("reference_null", False), ("reference_null", 1), ("reference_null", "true"),
+    ("identity", "native-null"), ("identity", {}), ("error", ""), ("error", "read failed"),
+    ("error", False), ("status", "observed"), ("status", "unknown"), ("status", "partial"),
+    ("index", False), ("index", 0.0), ("index", 1), ("extra_evidence", True),
+])
+def test_unset_reference_requires_exact_true_null_identity_and_null_error(complete_case, field, changed):
+    value = complete_case["reply"]["result"]["references"]["PTREF"]
+    value["reference_null"] = True
+    value["values"] = [unset_row()]
+    value["values"][0][field] = changed
+    with pytest.raises(ValueError, match="Invalid PARAGON component template evidence"):
+        _validate(complete_case["reply"], complete_case["payload"])
+
+
+@pytest.mark.parametrize("error", [None, "", " ", True, 1, {}, "x" * 4097, "😀" * 2049, "\ud800"])
+def test_unknown_native_null_reference_requires_a_bounded_error(complete_case, error):
+    result = complete_case["reply"]["result"]
+    value = result["references"]["PTREF"]
+    value["values"] = [{"index": 0, "status": "unknown", "identity": None, "reference_null": True, "error": error}]
+    value.update(reference_null=True, status="partial", complete=False, errors={"items": "Unknown null reference value."})
+    result["complete"] = result["success"] = False
+    with pytest.raises(ValueError, match="unknown reference identity"):
+        _validate(complete_case["reply"], complete_case["payload"])

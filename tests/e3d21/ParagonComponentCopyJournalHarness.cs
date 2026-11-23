@@ -28,7 +28,8 @@ internal static class ParagonComponentCopyJournalHarness
         { ["marker"] = marker, ["native_run_attempted"] = false, ["known_new_refno"] = "=999/999", ["time"] = "2026-11-22T01:02:03Z" } };
     private static void UnknownFacts(JToken facts, string message)
     {
-        foreach (string name in new[] { "creation_attempted", "native_run_attempted", "known_new_refno", "outcome_uncertain", "native_fault_latched", "error_code" })
+        foreach (string name in new[] { "creation_attempted", "native_run_attempted", "native_run_returned", "native_run_success",
+            "known_new_refno", "known_new_refno_verified", "readback_complete", "source_unchanged_scoped", "outcome_uncertain", "native_fault_latched", "error_code" })
             Check(Null(facts[name]), message + ": " + name);
         Check((bool)facts["retry_safe"] == false, message + ": retry_safe");
     }
@@ -113,7 +114,9 @@ internal static class ParagonComponentCopyJournalHarness
     {
         var journal = new Journal(); var admission = journal.Begin(Id(20), Digest());
         var rawFacts = new JObject { ["creation_attempted"] = true, ["native_run_attempted"] = false, ["known_new_refno"] = "=2/42",
-            ["outcome_uncertain"] = true, ["native_fault_latched"] = true, ["error_code"] = "native_database_fault", ["retry_safe"] = true };
+            ["outcome_uncertain"] = true, ["native_fault_latched"] = true, ["error_code"] = "native_database_fault", ["retry_safe"] = true,
+            ["native_run_returned"] = true, ["native_run_success"] = false, ["known_new_refno_verified"] = true,
+            ["readback_complete"] = false, ["source_unchanged_scoped"] = true };
         var facts = Journal.CriticalSummary.From(rawFacts); rawFacts["known_new_refno"] = "=99/99";
         JObject receipt = Receipt(20); receipt["critical_summary"] = new JObject { ["creation_attempted"] = false, ["known_new_refno"] = "=88/88" };
         Check(journal.TryStart(admission.Token, out Journal.CallbackToken callback) && journal.CompleteStarted(callback, receipt, facts, 500), "Receipt completion failed.");
@@ -122,6 +125,9 @@ internal static class ParagonComponentCopyJournalHarness
         Check((int)first["receipt"]["result"]["marker"] == 20 && first["receipt"]["extra"] == null, "Original receipt mutation changed storage.");
         Check((string)summary["known_new_refno"] == "=2/42" && (bool)summary["creation_attempted"] && !(bool)summary["native_run_attempted"]
             && (bool)summary["native_fault_latched"] && (bool)summary["outcome_uncertain"] && !(bool)summary["retry_safe"], "Independent typed facts were lost or inferred from envelope.");
+        Check((bool)summary["native_run_returned"] && !(bool)summary["native_run_success"]
+            && (bool)summary["known_new_refno_verified"] && !(bool)summary["readback_complete"]
+            && (bool)summary["source_unchanged_scoped"], "Copy Run return and scoped verification facts were not preserved independently.");
         Check(first["receipt"]["result"]["time"].Type == JTokenType.String, "JSON receipt date strings changed type.");
         first["receipt"]["result"]["marker"] = -1; first["critical_summary"]["known_new_refno"] = "=66/66"; first["store_policy"]["durable"] = true;
         JObject second = Status(journal, 20);
@@ -130,9 +136,11 @@ internal static class ParagonComponentCopyJournalHarness
         foreach (JToken bad in new JToken[] { JValue.CreateNull(), new JValue(1), new JValue(0.0), new JValue("true"), new JArray(true), new JObject { ["value"] = true } })
         {
             var values = new JObject();
-            foreach (string name in new[] { "creation_attempted", "native_run_attempted", "outcome_uncertain", "native_fault_latched" }) values[name] = bad.DeepClone();
+            foreach (string name in new[] { "creation_attempted", "native_run_attempted", "native_run_returned", "native_run_success",
+                "known_new_refno_verified", "readback_complete", "source_unchanged_scoped", "outcome_uncertain", "native_fault_latched" }) values[name] = bad.DeepClone();
             var observed = Json(Journal.CriticalSummary.From(values).Snapshot());
-            foreach (string name in new[] { "creation_attempted", "native_run_attempted", "outcome_uncertain", "native_fault_latched" })
+            foreach (string name in new[] { "creation_attempted", "native_run_attempted", "native_run_returned", "native_run_success",
+                "known_new_refno_verified", "readback_complete", "source_unchanged_scoped", "outcome_uncertain", "native_fault_latched" })
                 Check(Null(observed[name]), "False boolean evidence promoted to a known fact.");
         }
         UnknownFacts(Json(Journal.CriticalSummary.From(null).Snapshot()), "Missing facts must remain unknown");

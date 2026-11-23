@@ -187,6 +187,7 @@ _NATIVE_RESULT_DIAGNOSTIC_PATHS = frozenset({
     "/api/v1/view/set", "/api/v1/view/camera/set", "/api/v1/view/fit", "/api/v1/view/restore",
     "/api/v1/drawlist/visual", "/api/v1/drawlist/remove", "/api/v1/view/primitive-visual",
     "/api/v1/view/graphical-selection", "/api/v1/clash/check",
+    "/api/v1/paragon/component-copy",
 })
 
 
@@ -201,6 +202,7 @@ _WRITE_ATTEMPT_FIELDS = {
     "/api/v1/command": (),
     "/api/v1/command-batch": (),
     "/api/v1/pml-script": ("execution_attempted",),
+    "/api/v1/paragon/component-copy": ("creation_attempted", "native_run_attempted"),
 }
 _ALWAYS_MUTATING_PATHS = frozenset({"/api/v1/view/fit", "/api/v1/view/restore"})
 _PML_WRITE_PATHS = frozenset({"/api/v1/command", "/api/v1/command-batch", "/api/v1/pml-script"})
@@ -232,6 +234,10 @@ def _uninformative_write_failure(method: str, path: str, payload: Any, value: di
         # Session/capacity rejections and duplicate submissions have bounded
         # execution metadata in the envelope, rather than a native result.
         receipts.append(value)
+    if path == "/api/v1/paragon/component-copy":
+        if isinstance(receipt, dict) and isinstance(receipt.get("progress"), dict):
+            receipts.append(receipt["progress"])
+        receipts.append(value)
     attempted_fields = _WRITE_ATTEMPT_FIELDS.get(path, ("write_attempted",))
     for receipt in receipts:
         if type(receipt.get("outcome_uncertain")) is bool:
@@ -240,7 +246,7 @@ def _uninformative_write_failure(method: str, path: str, payload: Any, value: di
             return receipt["outcome_uncertain"]
         if receipt.get("success") is True or receipt.get("dry_run") is True:
             return False
-        if path == "/api/v1/pml-script" and receipt.get("this_submission_executed") is False:
+        if path in {"/api/v1/pml-script", "/api/v1/paragon/component-copy"} and receipt.get("this_submission_executed") is False:
             return False
         if attempted_fields and all(receipt.get(field) is False for field in attempted_fields):
             return False
@@ -288,6 +294,15 @@ def _response_failure_diagnostics(path: str, value: dict[str, Any]) -> dict[str,
     diagnostics = {"state": value["state"]} if isinstance(value.get("state"), dict) else {}
     if path in _NATIVE_RESULT_DIAGNOSTIC_PATHS and isinstance(value.get("result"), dict):
         diagnostics["result"] = value["result"]
+    if path in {"/api/v1/paragon/component-copy", "/api/v1/paragon/component-copy/status"}:
+        for key in ("version", "session_id", "bridge_build", "error_code"):
+            if isinstance(value.get(key), str):
+                diagnostics[key] = value[key]
+        for key in ("write_attempted", "outcome_uncertain", "native_fault_latched", "retry_safe"):
+            if type(value.get(key)) is bool or key == "write_attempted" and key in value and value[key] is None:
+                diagnostics[key] = value[key]
+        if isinstance(value.get("result"), dict):
+            diagnostics["result"] = value["result"]
     if path in {"/api/v1/pml-script", "/api/v1/pml-script/status"}:
         for key in ("request_id", "session_id"):
             if isinstance(value.get(key), str):
@@ -333,6 +348,7 @@ def _response_failure_diagnostics(path: str, value: dict[str, Any]) -> dict[str,
     if path in {"/health", "/api/v1/database/team-identity-manifest", "/api/v1/module/context",
                 "/api/v1/paragon/catalogue-manifest", "/api/v1/paragon/catalogue-schema",
                 "/api/v1/paragon/component-template", "/api/v1/paragon/reference-trace",
+                "/api/v1/paragon/component-copy", "/api/v1/paragon/component-copy/status",
                 "/api/v1/piping/specification-read"}:
         for key in ("version", "session_id", "bridge_build", "error_code"):
             if isinstance(value.get(key), str):
@@ -497,7 +513,8 @@ class BridgeClient:
                         "/api/v1/piping/specification-read", "/api/v1/database/team-identity-manifest",
                         "/api/v1/module/context", "/api/v1/paragon/catalogue-manifest",
                         "/api/v1/paragon/catalogue-schema", "/api/v1/paragon/component-template",
-                        "/api/v1/paragon/reference-trace"}:
+                        "/api/v1/paragon/reference-trace", "/api/v1/paragon/component-copy",
+                        "/api/v1/paragon/component-copy/status"}:
             value.setdefault("version", selected_version)
         return value
 

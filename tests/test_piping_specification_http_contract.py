@@ -79,7 +79,7 @@ class PipingSpecificationHttpContractTests(unittest.TestCase):
         # The managed production request/interface supplies validation. The SDK
         # reader is intentionally absent from this project and from its inputs.
         names = (
-            "PipingSpecificationReadRequest.cs", "TeamDatabaseIdentityManifest.cs", "ParagonComponentTemplate.cs", "ParagonReferenceTrace.cs", "ConnectivitySnapshot.cs", "ModuleContext.cs",
+            "PipingSpecificationReadRequest.cs", "TeamDatabaseIdentityManifest.cs", "ParagonComponentTemplate.cs", "ParagonReferenceTrace.cs", "ParagonComponentCopy.cs", "ConnectivitySnapshot.cs", "ModuleContext.cs",
             "ParagonCatalogueSchema.cs", "ParagonCatalogueManifest.cs", "NativeDatabaseFaultState.cs",
             "MessageCursor.cs", "EquipmentManifest.cs", "EquipmentChildSchema.cs", "PipeMemberManifest.cs", "ModelEditInput.cs",
             "AttributeEditPolicy.cs",

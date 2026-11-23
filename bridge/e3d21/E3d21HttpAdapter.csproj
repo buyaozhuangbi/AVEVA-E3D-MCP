@@ -67,6 +67,9 @@
     <Compile Include="E3d21ParagonCatalogueSchema.cs" />
     <Compile Include="ParagonComponentTemplate.cs" />
     <Compile Include="E3d21ParagonComponentTemplate.cs" />
+    <Compile Include="ParagonComponentCopy.cs" />
+    <Compile Include="ParagonComponentCopyJournal.cs" />
+    <Compile Include="E3d21ParagonComponentCopy.cs" />
     <Compile Include="ParagonReferenceTrace.cs" />
     <Compile Include="E3d21ParagonReferenceTrace.cs" />
     <Compile Include="ConnectivitySnapshot.cs" />

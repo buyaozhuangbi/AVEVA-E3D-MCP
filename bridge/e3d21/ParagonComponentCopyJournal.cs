@@ -57,17 +57,25 @@ internal sealed class ParagonComponentCopyJournal
     internal sealed class CriticalSummary
     {
         private readonly bool? creationAttempted, nativeRunAttempted, outcomeUncertain, nativeFaultLatched;
+        private readonly bool? nativeRunReturned, knownNewRefnoVerified, nativeRunSuccess, readbackComplete, sourceUnchangedScoped;
         private readonly string knownNewRefno, errorCode;
 
         internal CriticalSummary(bool? creationAttempted = null, bool? nativeRunAttempted = null,
             string knownNewRefno = null, bool? outcomeUncertain = null,
-            bool? nativeFaultLatched = null, string errorCode = null)
+            bool? nativeFaultLatched = null, string errorCode = null,
+            bool? nativeRunReturned = null, bool? knownNewRefnoVerified = null, bool? nativeRunSuccess = null,
+            bool? readbackComplete = null, bool? sourceUnchangedScoped = null)
         {
             this.creationAttempted = creationAttempted;
             this.nativeRunAttempted = nativeRunAttempted;
             this.knownNewRefno = CanonicalReference(knownNewRefno);
             this.outcomeUncertain = outcomeUncertain;
             this.nativeFaultLatched = nativeFaultLatched;
+            this.nativeRunReturned = nativeRunReturned;
+            this.knownNewRefnoVerified = knownNewRefnoVerified;
+            this.nativeRunSuccess = nativeRunSuccess;
+            this.readbackComplete = readbackComplete;
+            this.sourceUnchangedScoped = sourceUnchangedScoped;
             this.errorCode = !string.IsNullOrWhiteSpace(errorCode) && errorCode.Length <= 128 && ValidUtf16(errorCode) ? errorCode : null;
         }
 
@@ -76,13 +84,19 @@ internal sealed class ParagonComponentCopyJournal
             if (ReferenceEquals(facts, null) || facts.GetType() != typeof(JObject)) return new CriticalSummary();
             return new CriticalSummary(Boolean(facts["creation_attempted"]), Boolean(facts["native_run_attempted"]),
                 Text(facts["known_new_refno"]), Boolean(facts["outcome_uncertain"]),
-                Boolean(facts["native_fault_latched"]), Text(facts["error_code"]));
+                Boolean(facts["native_fault_latched"]), Text(facts["error_code"]),
+                Boolean(facts["native_run_returned"]), Boolean(facts["known_new_refno_verified"]),
+                Boolean(facts["native_run_success"]), Boolean(facts["readback_complete"]),
+                Boolean(facts["source_unchanged_scoped"]));
         }
 
         internal Dictionary<string, object> Snapshot() => new Dictionary<string, object>
         {
             ["creation_attempted"] = creationAttempted, ["native_run_attempted"] = nativeRunAttempted,
             ["known_new_refno"] = knownNewRefno, ["outcome_uncertain"] = outcomeUncertain,
+            ["native_run_returned"] = nativeRunReturned, ["native_run_success"] = nativeRunSuccess,
+            ["known_new_refno_verified"] = knownNewRefnoVerified, ["readback_complete"] = readbackComplete,
+            ["source_unchanged_scoped"] = sourceUnchangedScoped,
             ["native_fault_latched"] = nativeFaultLatched, ["error_code"] = errorCode, ["retry_safe"] = false
         };
 

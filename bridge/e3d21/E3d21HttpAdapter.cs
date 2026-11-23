@@ -92,6 +92,10 @@ public sealed class E3d21HttpAdapter : IDisposable
         bool teamDatabaseIdentityManifestQuery = false;
         bool paragonComponentTemplateQuery = false;
         bool paragonReferenceTraceQuery = false;
+        bool paragonComponentCopyQuery = false;
+        bool paragonComponentCopyStatusQuery = false;
+        bool paragonComponentCopyDispatched = false;
+        bool paragonComponentCopyDryRun = true;
         bool projectCatalogProbe = false;
         try
         {
@@ -111,6 +115,8 @@ public sealed class E3d21HttpAdapter : IDisposable
             teamDatabaseIdentityManifestQuery = path == "/api/v1/database/team-identity-manifest";
             paragonComponentTemplateQuery = path == "/api/v1/paragon/component-template";
             paragonReferenceTraceQuery = path == "/api/v1/paragon/reference-trace";
+            paragonComponentCopyQuery = path == "/api/v1/paragon/component-copy";
+            paragonComponentCopyStatusQuery = path == "/api/v1/paragon/component-copy/status";
             projectCatalogProbe = path == "/api/v1/database/project-catalog-probe";
             object response;
             if (method == "GET" && path == "/health")
@@ -137,6 +143,7 @@ public sealed class E3d21HttpAdapter : IDisposable
                         .Concat(context is IE3d21TeamDatabaseIdentityManifestContext ? new[] { "team_database_identity_manifest" } : Array.Empty<string>())
                         .Concat(context is IE3d21ParagonComponentTemplateContext ? new[] { "paragon_component_template" } : Array.Empty<string>())
                         .Concat(context is IE3d21ParagonReferenceTraceContext ? new[] { "paragon_reference_trace" } : Array.Empty<string>())
+                        .Concat(context is IE3d21ParagonComponentCopyContext ? new[] { "paragon_component_copy", "paragon_component_copy_status" } : Array.Empty<string>())
                         .Concat(context is IE3d21PipeMemberManifestContext ? new[] { "pipe_member_manifest" } : Array.Empty<string>()).ToArray() };
             }
             else if (method == "GET" && path == "/api/v1/module/context")
@@ -218,6 +225,85 @@ public sealed class E3d21HttpAdapter : IDisposable
                 response = new { ok = true, version = "E3D21", session_id = sessionId,
                     bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
                     result = templateContext.ReadParagonComponentTemplate(template.Refno, sessionId) };
+            }
+            else if (method == "POST" && path == "/api/v1/paragon/component-copy")
+            {
+                var copyContext = context as IE3d21ParagonComponentCopyContext;
+                if (copyContext == null)
+                {
+                    await WriteJsonAsync(request.Response, new { ok = false, version = "E3D21", session_id = sessionId,
+                        bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
+                        error = "PARAGON component generation is unavailable on this bridge." }, 404).ConfigureAwait(false);
+                    return;
+                }
+                if (request.Request.QueryString.Count != 0)
+                    throw new ArgumentException("PARAGON component generation accepts JSON parameters only.");
+                JObject body = await ReadUniqueBodyAsync(request.Request, 8192).ConfigureAwait(false);
+                var allowed = new HashSet<string>(StringComparer.Ordinal)
+                { "source_refno", "parent_refno", "name", "recipe", "dry_run", "request_id",
+                    "expected_session_id", "expected_bridge_build", "expected_revision" };
+                if (body.Properties().Any(property => !allowed.Contains(property.Name)))
+                    throw new ArgumentException("Unknown PARAGON component generation parameter.");
+                paragonComponentCopyDryRun = ReadBoolean(body, "dry_run", true);
+                var executionKeys = new[] { "request_id", "expected_session_id", "expected_bridge_build", "expected_revision" };
+                if (paragonComponentCopyDryRun && executionKeys.Any(key => body.Property(key) != null))
+                    throw new ArgumentException("Preview does not accept execution identifiers or a revision.");
+                var copy = ParagonComponentCopyRequest.Validate(ReadString(body, "source_refno", null),
+                    ReadString(body, "parent_refno", null), ReadString(body, "name", null),
+                    ReadString(body, "recipe", ParagonComponentCopyRequest.RecipeName), paragonComponentCopyDryRun,
+                    ReadString(body, "request_id", null), ReadString(body, "expected_session_id", null),
+                    ReadString(body, "expected_bridge_build", null), ReadString(body, "expected_revision", null));
+                paragonComponentCopyDispatched = true;
+                ParagonComponentCopyReply copied = copyContext.CopyParagonComponent(copy.SourceRefno, copy.ParentRefno,
+                    copy.Name, copy.Recipe, copy.DryRun, copy.RequestId, copy.ExpectedSessionId,
+                    copy.ExpectedBridgeBuild, copy.ExpectedRevision, sessionId);
+                if (copied == null || copied.Result == null)
+                    throw new InvalidOperationException("The component generation reader did not return a native receipt.");
+                if (copied.Ok)
+                    await WriteJsonAsync(request.Response, new { ok = true, version = "E3D21", session_id = sessionId,
+                        bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
+                        result = copied.Result }, copied.HttpStatus).ConfigureAwait(false);
+                else if (copied.NativeFaultLatched)
+                    await WriteJsonAsync(request.Response, new { ok = false, version = "E3D21", session_id = sessionId,
+                        bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
+                        error_code = "native_database_fault", native_fault_latched = true, retry_safe = false,
+                        error = ParagonComponentCopyRequest.ErrorText(copied.Error), result = copied.Result }, copied.HttpStatus).ConfigureAwait(false);
+                else
+                    await WriteJsonAsync(request.Response, new { ok = false, version = "E3D21", session_id = sessionId,
+                        bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
+                        error = ParagonComponentCopyRequest.ErrorText(copied.Error), result = copied.Result }, copied.HttpStatus).ConfigureAwait(false);
+                return;
+            }
+            else if (method == "GET" && path == "/api/v1/paragon/component-copy/status")
+            {
+                var copyContext = context as IE3d21ParagonComponentCopyContext;
+                if (copyContext == null)
+                {
+                    await WriteJsonAsync(request.Response, new { ok = false, version = "E3D21", session_id = sessionId,
+                        bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
+                        error = "PARAGON component generation status is unavailable on this bridge." }, 404).ConfigureAwait(false);
+                    return;
+                }
+                if (request.Request.HasEntityBody || request.Request.ContentLength64 != 0
+                    || !string.IsNullOrEmpty(request.Request.Headers["Transfer-Encoding"]))
+                    throw new ArgumentException("Component generation status does not accept a request body.");
+                var query = request.Request.QueryString;
+                foreach (string key in query.AllKeys)
+                    if ((key != "request_id" && key != "expected_session_id") || query.GetValues(key).Length != 1)
+                        throw new ArgumentException("Unknown or duplicate component generation status parameter.");
+                string requestId = query["request_id"], expectedSessionId = query["expected_session_id"];
+                ParagonComponentCopyRequest.ValidateStatus(requestId, expectedSessionId);
+                if (expectedSessionId != sessionId)
+                {
+                    await WriteJsonAsync(request.Response, new { ok = false, version = "E3D21", session_id = sessionId,
+                        bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
+                        write_attempted = false, outcome_uncertain = false, retry_safe = false,
+                        error = "The expected bridge session changed; this status query did not inspect another session." }, 409).ConfigureAwait(false);
+                    return;
+                }
+                response = new { ok = true, version = "E3D21", session_id = sessionId,
+                    bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
+                    result = copyContext.GetParagonComponentCopyStatus(requestId, expectedSessionId, sessionId) };
             }
             else if (method == "POST" && path == "/api/v1/paragon/reference-trace")
             {
@@ -1264,6 +1350,14 @@ public sealed class E3d21HttpAdapter : IDisposable
                         error = "PARAGON component templates require POST." }, 405).ConfigureAwait(false);
                     return;
                 }
+                if (paragonComponentCopyQuery || paragonComponentCopyStatusQuery)
+                {
+                    request.Response.AddHeader("Allow", paragonComponentCopyStatusQuery ? "GET" : "POST");
+                    await WriteJsonAsync(request.Response, new { ok = false, version = "E3D21", session_id = sessionId,
+                        bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
+                        error = paragonComponentCopyStatusQuery ? "Component generation status requires GET." : "Component generation requires POST." }, 405).ConfigureAwait(false);
+                    return;
+                }
                 if (paragonReferenceTraceQuery)
                 {
                     request.Response.AddHeader("Allow", "POST");
@@ -1345,6 +1439,24 @@ public sealed class E3d21HttpAdapter : IDisposable
                 return;
             }
             await WriteJsonAsync(request.Response, response, 200).ConfigureAwait(false);
+        }
+        catch (NativeDatabaseFaultException ex) when (paragonComponentCopyQuery || paragonComponentCopyStatusQuery)
+        {
+            bool unknown = paragonComponentCopyDispatched && !paragonComponentCopyDryRun;
+            await WriteJsonAsync(request.Response, new { ok = false, version = "E3D21", session_id = sessionId,
+                bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
+                error_code = "native_database_fault", native_fault_latched = true,
+                write_attempted = unknown ? (bool?)null : false, outcome_uncertain = unknown, retry_safe = false,
+                error = ParagonComponentCopyRequest.ErrorText(ex.Message) }, 500).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (paragonComponentCopyQuery || paragonComponentCopyStatusQuery)
+        {
+            bool unknown = paragonComponentCopyDispatched && !paragonComponentCopyDryRun;
+            await WriteJsonAsync(request.Response, new { ok = false, version = "E3D21", session_id = sessionId,
+                bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
+                write_attempted = unknown ? (bool?)null : false, outcome_uncertain = unknown, retry_safe = false,
+                error = ex is JsonReaderException ? "Request body is not valid JSON." : ParagonComponentCopyRequest.ErrorText(ex.Message) },
+                !paragonComponentCopyDispatched && (ex is ArgumentException || ex is JsonException) ? 400 : 500).ConfigureAwait(false);
         }
         catch (NativeDatabaseFaultException ex) when (paragonReferenceTraceQuery)
         {

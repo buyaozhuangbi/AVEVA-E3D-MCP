@@ -62,8 +62,8 @@ class MessageWindowToolTests(unittest.TestCase):
 
     def test_discovery_adds_one_read_only_tool_and_preserves_legacy_tail_schema(self):
         catalog = self.server._dispatch({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})["result"]["tools"]
-        self.assertEqual(len(catalog), 115)
-        self.assertEqual(len({tool["name"] for tool in catalog}), 115)
+        self.assertEqual(len(catalog), 117)
+        self.assertEqual(len({tool["name"] for tool in catalog}), 117)
         tool = next(item for item in catalog if item["name"] == "e3d_read_message_window")
         self.assertTrue(tool["annotations"]["readOnlyHint"])
         self.assertFalse(tool["annotations"]["destructiveHint"])
