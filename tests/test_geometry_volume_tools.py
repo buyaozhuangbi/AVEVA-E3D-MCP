@@ -32,7 +32,7 @@ class GeometryVolumeToolTests(unittest.TestCase):
 
     def test_volume_schema_requires_explicit_reference_and_exposes_only_read_controls(self) -> None:
         tools = {tool["name"]: tool for tool in self._rpc("tools/list", {})["tools"]}
-        self.assertEqual(len(tools), 117)
+        self.assertEqual(len(tools), 119)
         volume = tools["e3d_geometry_volume"]
         self.assertEqual(volume["annotations"], {
             "readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False,

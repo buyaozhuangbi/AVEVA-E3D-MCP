@@ -16,6 +16,7 @@ namespace E3d21AiBridge;
 internal sealed class ParagonComponentCopyJournal
 {
     internal const string Operation = "paragon_component_copy";
+    internal const string ParametersOperation = "paragon_component_parameters_set";
     internal const int MaximumRecords = 64;
     internal const int MaximumReceiptUtf8Bytes = 262144;
     internal const int MaximumRememberedIds = 65536;
@@ -59,12 +60,18 @@ internal sealed class ParagonComponentCopyJournal
         private readonly bool? creationAttempted, nativeRunAttempted, outcomeUncertain, nativeFaultLatched;
         private readonly bool? nativeRunReturned, knownNewRefnoVerified, nativeRunSuccess, readbackComplete, sourceUnchangedScoped;
         private readonly string knownNewRefno, errorCode;
+        private readonly string knownTargetRefno;
+        private readonly bool? knownTargetRefnoVerified, parameterWriteAttempted, parameterWriteReturned;
+        private readonly bool? parametersEqualRequest, contextUnchanged, noChange;
 
         internal CriticalSummary(bool? creationAttempted = null, bool? nativeRunAttempted = null,
             string knownNewRefno = null, bool? outcomeUncertain = null,
             bool? nativeFaultLatched = null, string errorCode = null,
             bool? nativeRunReturned = null, bool? knownNewRefnoVerified = null, bool? nativeRunSuccess = null,
-            bool? readbackComplete = null, bool? sourceUnchangedScoped = null)
+            bool? readbackComplete = null, bool? sourceUnchangedScoped = null,
+            string knownTargetRefno = null, bool? knownTargetRefnoVerified = null,
+            bool? parameterWriteAttempted = null, bool? parameterWriteReturned = null,
+            bool? parametersEqualRequest = null, bool? contextUnchanged = null, bool? noChange = null)
         {
             this.creationAttempted = creationAttempted;
             this.nativeRunAttempted = nativeRunAttempted;
@@ -76,6 +83,13 @@ internal sealed class ParagonComponentCopyJournal
             this.nativeRunSuccess = nativeRunSuccess;
             this.readbackComplete = readbackComplete;
             this.sourceUnchangedScoped = sourceUnchangedScoped;
+            this.knownTargetRefno = CanonicalReference(knownTargetRefno);
+            this.knownTargetRefnoVerified = knownTargetRefnoVerified;
+            this.parameterWriteAttempted = parameterWriteAttempted;
+            this.parameterWriteReturned = parameterWriteReturned;
+            this.parametersEqualRequest = parametersEqualRequest;
+            this.contextUnchanged = contextUnchanged;
+            this.noChange = noChange;
             this.errorCode = !string.IsNullOrWhiteSpace(errorCode) && errorCode.Length <= 128 && ValidUtf16(errorCode) ? errorCode : null;
         }
 
@@ -87,10 +101,23 @@ internal sealed class ParagonComponentCopyJournal
                 Boolean(facts["native_fault_latched"]), Text(facts["error_code"]),
                 Boolean(facts["native_run_returned"]), Boolean(facts["known_new_refno_verified"]),
                 Boolean(facts["native_run_success"]), Boolean(facts["readback_complete"]),
-                Boolean(facts["source_unchanged_scoped"]));
+                Boolean(facts["source_unchanged_scoped"]), Text(facts["known_target_refno"]),
+                Boolean(facts["known_target_refno_verified"]), Boolean(facts["parameter_write_attempted"]),
+                Boolean(facts["parameter_write_returned"]), Boolean(facts["parameters_equal_request"]),
+                Boolean(facts["context_unchanged"]), Boolean(facts["no_change"]));
         }
 
-        internal Dictionary<string, object> Snapshot() => new Dictionary<string, object>
+        internal Dictionary<string, object> Snapshot(bool parameterOperation = false) => parameterOperation
+            ? new Dictionary<string, object>
+        {
+            ["known_target_refno"] = knownTargetRefno, ["known_target_refno_verified"] = knownTargetRefnoVerified,
+            ["parameter_write_attempted"] = parameterWriteAttempted, ["parameter_write_returned"] = parameterWriteReturned,
+            ["parameters_equal_request"] = parametersEqualRequest, ["readback_complete"] = readbackComplete,
+            ["context_unchanged"] = contextUnchanged, ["no_change"] = noChange,
+            ["outcome_uncertain"] = outcomeUncertain, ["native_fault_latched"] = nativeFaultLatched,
+            ["error_code"] = errorCode, ["retry_safe"] = false
+        }
+            : new Dictionary<string, object>
         {
             ["creation_attempted"] = creationAttempted, ["native_run_attempted"] = nativeRunAttempted,
             ["known_new_refno"] = knownNewRefno, ["outcome_uncertain"] = outcomeUncertain,
@@ -129,12 +156,14 @@ internal sealed class ParagonComponentCopyJournal
     private readonly Func<DateTimeOffset> clock;
     private readonly int capacity, maxReceiptUtf8Bytes, maxRememberedIds;
     private readonly TimeSpan retention;
+    private readonly string operation;
     private long sequence;
 
     internal ParagonComponentCopyJournal(Func<DateTimeOffset> clock = null, int capacity = MaximumRecords,
         TimeSpan? retention = null, int maxReceiptUtf8Bytes = MaximumReceiptUtf8Bytes,
-        int maxRememberedIds = MaximumRememberedIds)
+        int maxRememberedIds = MaximumRememberedIds, string operation = Operation)
     {
+        if (operation != Operation && operation != ParametersOperation) throw new ArgumentException("Unsupported journal operation.", "operation");
         if (capacity < 1 || capacity > MaximumRecords) throw new ArgumentOutOfRangeException("capacity");
         if (maxReceiptUtf8Bytes < 1 || maxReceiptUtf8Bytes > MaximumReceiptUtf8Bytes) throw new ArgumentOutOfRangeException("maxReceiptUtf8Bytes");
         if (maxRememberedIds < 1 || maxRememberedIds > MaximumRememberedIds) throw new ArgumentOutOfRangeException("maxRememberedIds");
@@ -143,6 +172,7 @@ internal sealed class ParagonComponentCopyJournal
         this.clock = clock ?? (() => DateTimeOffset.UtcNow);
         this.capacity = capacity; this.retention = duration;
         this.maxReceiptUtf8Bytes = maxReceiptUtf8Bytes; this.maxRememberedIds = maxRememberedIds;
+        this.operation = operation;
     }
 
     internal AdmissionResult Begin(string requestId, string requestFingerprint)
@@ -264,24 +294,24 @@ internal sealed class ParagonComponentCopyJournal
         bool completed = entry.State == EntryState.Completed;
         return new Dictionary<string, object>
         {
-            ["operation"] = Operation, ["available"] = true,
+            ["operation"] = operation, ["available"] = true,
             ["status"] = completed ? "completed" : entry.State == EntryState.Running ? "running" : "accepted",
             ["request_id"] = entry.Id.ToString("D"), ["request_fingerprint"] = entry.Fingerprint, ["request_id_reserved"] = true,
             ["accepted_utc"] = Time(entry.AcceptedUtc), ["started_utc"] = Time(entry.StartedUtc), ["completed_utc"] = Time(entry.CompletedUtc),
             ["completion_pending"] = entry.CompletionClaimed && !completed, ["http_status"] = entry.HttpStatus,
             ["receipt_available"] = entry.ReceiptJson != null, ["receipt_omitted_reason"] = completed ? entry.OmittedReason : "not_completed",
-            ["receipt"] = receipt, ["critical_summary"] = entry.Summary.Snapshot(), ["retry_safe"] = false,
+            ["receipt"] = receipt, ["critical_summary"] = entry.Summary.Snapshot(operation == ParametersOperation), ["retry_safe"] = false,
             ["store_policy"] = Policy(), ["scope"] = Scope
         };
     }
 
     private Dictionary<string, object> Unknown(Guid id) => new Dictionary<string, object>
     {
-        ["operation"] = Operation, ["available"] = false, ["status"] = "unknown_or_expired",
+        ["operation"] = operation, ["available"] = false, ["status"] = "unknown_or_expired",
         ["request_id"] = id.ToString("D"), ["request_fingerprint"] = null, ["request_id_reserved"] = seenIds.Contains(id),
         ["accepted_utc"] = null, ["started_utc"] = null, ["completed_utc"] = null, ["completion_pending"] = false,
         ["http_status"] = null, ["receipt_available"] = false, ["receipt_omitted_reason"] = "unknown_or_expired", ["receipt"] = null,
-        ["critical_summary"] = new CriticalSummary().Snapshot(), ["retry_safe"] = false, ["store_policy"] = Policy(), ["scope"] = Scope
+        ["critical_summary"] = new CriticalSummary().Snapshot(operation == ParametersOperation), ["retry_safe"] = false, ["store_policy"] = Policy(), ["scope"] = Scope
     };
 
     private const string Scope = "Session-local managed callback ownership only; accepted is not running, running does not prove native execution, and completed records a final receipt rather than native success. Unknown/expired does not prove no execution. No replay, durability, cross-session exactly-once, or SDK/UI ownership guarantee.";

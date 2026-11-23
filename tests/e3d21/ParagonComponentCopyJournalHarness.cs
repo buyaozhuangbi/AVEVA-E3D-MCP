@@ -319,12 +319,65 @@ internal static class ParagonComponentCopyJournalHarness
         Console.WriteLine("Copy journal section passed: full 65536-ID session tombstone boundary");
     }
 
+    private static void ParameterOperation()
+    {
+        Throws<ArgumentException>(() => new Journal(operation: "unknown"), "Unknown journal operation was admitted.");
+        var copy = new Journal();
+        var setter = new Journal(maxReceiptUtf8Bytes: 32, operation: Journal.ParametersOperation);
+        string[] names = { "known_target_refno", "known_target_refno_verified", "parameter_write_attempted",
+            "parameter_write_returned", "parameters_equal_request", "readback_complete", "context_unchanged",
+            "no_change", "outcome_uncertain", "native_fault_latched", "error_code", "retry_safe" };
+        JObject unknown = Status(setter, 700);
+        Check((string)unknown["operation"] == Journal.ParametersOperation, "Setter journal used the copy operation.");
+        Check(new HashSet<string>(((JObject)unknown["critical_summary"]).Properties().Select(p => p.Name)).SetEquals(names),
+            "Setter critical summary shape mixed copy and parameter facts.");
+        foreach (string name in names.Where(name => name != "retry_safe"))
+            Check(Null(unknown["critical_summary"][name]), "Unknown setter record fabricated a native fact.");
+        var admitted = setter.Begin(Id(700), Digest());
+        var copyAdmission = copy.Begin(Id(700), Digest());
+        Check(!setter.TryStart(copyAdmission.Token, out _), "A copy admission started a setter callback.");
+        Check(setter.TryStart(admitted.Token, out Journal.CallbackToken callback), "Setter callback did not start.");
+        foreach (string name in names.Where(name => name != "retry_safe"))
+            Check(Null(Status(setter, 700)["critical_summary"][name]), "Running setter journal inferred native execution.");
+        var sourceFacts = new JObject { ["known_target_refno"] = "=2/42", ["known_target_refno_verified"] = true,
+            ["parameter_write_attempted"] = true, ["parameter_write_returned"] = true,
+            ["parameters_equal_request"] = JValue.CreateNull(), ["readback_complete"] = false,
+            ["context_unchanged"] = JValue.CreateNull(), ["no_change"] = false,
+            ["outcome_uncertain"] = true, ["native_fault_latched"] = true, ["error_code"] = "native_database_fault" };
+        var facts = Journal.CriticalSummary.From(sourceFacts);
+        sourceFacts["known_target_refno"] = "=99/99";
+        Check(setter.CompleteStarted(callback, new JObject { ["payload"] = new string('x', 128) }, facts, 500),
+            "Setter fault receipt could not complete.");
+        JObject completed = Status(setter, 700);
+        Check(!((bool)completed["receipt_available"]) && (string)completed["receipt_omitted_reason"] == "receipt_too_large",
+            "Oversized setter receipt did not retain an explicit omission.");
+        JToken summary = completed["critical_summary"];
+        Check((string)summary["known_target_refno"] == "=2/42" && (bool)summary["known_target_refno_verified"]
+            && (bool)summary["parameter_write_attempted"] && (bool)summary["parameter_write_returned"]
+            && !(bool)summary["readback_complete"] && (bool)summary["native_fault_latched"]
+            && (bool)summary["outcome_uncertain"] && !(bool)summary["retry_safe"],
+            "Setter facts were lost, inferred, or changed when the full fault receipt was omitted.");
+        Check(!setter.Begin(Id(700), Digest('b')).IsNew, "Completed setter ID could execute again.");
+        var copySummary = (JObject)Status(copy, 700)["critical_summary"];
+        Check(copySummary["known_target_refno"] == null && copySummary["known_new_refno"] != null
+            && copySummary.Properties().Count() == 12, "Operation extension changed the old copy summary shape.");
+        foreach (JToken invalid in new JToken[] { new JValue(1), new JValue("true"), new JArray(true), new JObject(), JValue.CreateNull() })
+        {
+            var raw = new JObject();
+            foreach (string name in names.Where(name => name != "retry_safe")) raw[name] = invalid.DeepClone();
+            JObject strict = Json(Journal.CriticalSummary.From(raw).Snapshot(true));
+            foreach (string name in names.Where(name => name != "retry_safe" && name != "error_code"))
+                Check(Null(strict[name]), "Invalid parameter fact was promoted to a known fact.");
+        }
+        Console.WriteLine("Copy journal section passed: isolated parameter facts survive full receipt omission");
+    }
+
     private static int Main()
     {
         try
         {
             Validation(); CapabilitiesAndDedup(); ImmutabilityAndCriticalFacts(); OmissionAndPureJson();
-            Concurrency(); TimeoutCapacityAndExpiry(); Tombstones();
+            Concurrency(); TimeoutCapacityAndExpiry(); Tombstones(); ParameterOperation();
             Console.WriteLine("PARAGON component copy journal production checks passed: " + assertions + "; pure managed, no SDK/PML, hostile serializers invoked=" + hostileWrites + ".");
             return 0;
         }

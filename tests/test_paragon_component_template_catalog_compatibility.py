@@ -16,7 +16,7 @@ from aveva_e3d_mcp.tools import create_server
 
 BASELINE = ROOT / "tests/fixtures/paragon_component_template_catalog113.json"
 BASELINE_SHA256 = "2362d9130af2d5a453e23325cc996143fa7beacf9fce5fe82cffed399b38e179"
-ADDED_TOOLS = {"e3d_paragon_component_template", "e3d_paragon_reference_trace", "e3d_paragon_component_copy", "e3d_paragon_component_copy_status"}
+ADDED_TOOLS = {"e3d_paragon_component_template", "e3d_paragon_reference_trace", "e3d_paragon_component_copy", "e3d_paragon_component_copy_status", "e3d_paragon_component_parameters_set", "e3d_paragon_component_parameters_status"}
 PLAN = "e3d_paragon_generation_plan"
 PLAN_DESCRIPTION = (
     "Compose one review draft for copying an existing SCOM leaf within the same explicit Catalogue CATE. "
@@ -42,9 +42,9 @@ class ParagonComponentTemplateCatalogCompatibilityTests(unittest.TestCase):
         )["result"]["tools"]
 
         self.assertEqual(len(baseline), 113)
-        self.assertEqual(len(current), 117)
+        self.assertEqual(len(current), 119)
         self.assertEqual(len({tool["name"] for tool in baseline}), 113)
-        self.assertEqual(len({tool["name"] for tool in current}), 117)
+        self.assertEqual(len({tool["name"] for tool in current}), 119)
         old_by_name = {tool["name"]: tool for tool in baseline}
         current_by_name = {tool["name"]: tool for tool in current}
         self.assertEqual(set(current_by_name) - set(old_by_name), ADDED_TOOLS)

@@ -26,12 +26,12 @@ class ParagonReferenceTraceCatalogCompatibilityTests(unittest.TestCase):
             "jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {},
         })["result"]["tools"]
         self.assertEqual(len(baseline), 114)
-        self.assertEqual(len(current), 117)
+        self.assertEqual(len(current), 119)
         old_by_name = {tool["name"]: tool for tool in baseline}
         current_by_name = {tool["name"]: tool for tool in current}
         self.assertEqual(len(old_by_name), 114)
-        self.assertEqual(len(current_by_name), 117)
-        self.assertEqual(set(current_by_name) - set(old_by_name), {"e3d_paragon_reference_trace", "e3d_paragon_component_copy", "e3d_paragon_component_copy_status"})
+        self.assertEqual(len(current_by_name), 119)
+        self.assertEqual(set(current_by_name) - set(old_by_name), {"e3d_paragon_reference_trace", "e3d_paragon_component_copy", "e3d_paragon_component_copy_status", "e3d_paragon_component_parameters_set", "e3d_paragon_component_parameters_status"})
         self.assertEqual(set(old_by_name) - set(current_by_name), set())
         for name, historical in old_by_name.items():
             with self.subTest(tool=name):

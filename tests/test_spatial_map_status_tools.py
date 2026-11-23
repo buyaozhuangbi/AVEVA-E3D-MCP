@@ -29,7 +29,7 @@ class SpatialMapStatusToolsTests(unittest.TestCase):
 
     def test_discovery_is_strict_readonly_without_capture_and_uses_database_context(self):
         definitions = self.server._dispatch({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})["result"]["tools"]
-        self.assertEqual(len(definitions), 117)
+        self.assertEqual(len(definitions), 119)
         tool = next(item for item in definitions if item["name"] == "e3d_spatial_map_status")
         schema = tool["inputSchema"]
         self.assertEqual(set(schema["properties"]), {"database_number", "extract_number", "expected_context"})

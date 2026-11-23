@@ -552,7 +552,7 @@ class DiagnosisEvidenceDetailBoundaryTests(unittest.TestCase):
 
     def test_catalog_keeps_full_default_and_exposes_only_two_literal_detail_values(self):
         catalog = self.rpc("tools/list", {})["tools"]
-        self.assertEqual(len(catalog), 117)
+        self.assertEqual(len(catalog), 119)
         definition = next(row for row in catalog if row["name"] == "e3d_diagnose_element")
         field = definition["inputSchema"]["properties"]["evidence_detail"]
         self.assertEqual(field["type"], "string")

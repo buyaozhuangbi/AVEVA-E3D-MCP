@@ -51,7 +51,7 @@ class GeometryRelationBatchToolTests(unittest.TestCase):
 
     def test_catalog_exposes_bounded_read_only_ordered_pairs(self):
         tools = {item["name"]: item for item in self.rpc("tools/list", {})["tools"]}
-        self.assertEqual(len(tools), 117)
+        self.assertEqual(len(tools), 119)
         tool = tools["e3d_geometry_relation_batch"]
         self.assertEqual(tool["annotations"], {
             "readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False,

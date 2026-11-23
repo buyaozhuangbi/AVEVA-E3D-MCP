@@ -2,19 +2,21 @@
 
 面向 AVEVA Everything3D（E3D）的模型开发与调试 MCP 服务。Python MCP server 通过标准输入/输出（stdio）连接 Codex、Claude Desktop、Cursor 等客户端；需要读取真实 E3D 状态时，再由 E3D 进程内的 .NET Addin 提供本机 HTTP bridge。
 
-当前 MCP catalog 注册 **117 个工具**。`tools/list` 返回的工具定义和可选功能是当前实例能力的权威来源；实际能力受 E3D 版本、加载的 Addin 和配置影响。Python distribution metadata 当前版本为 `0.1.0`（见 `pyproject.toml`）；它不是 E3D Addin build 版本。
+当前 MCP catalog 注册 **119 个工具**。`tools/list` 返回的工具定义和可选功能是当前实例能力的权威来源；实际能力受 E3D 版本、加载的 Addin 和配置影响。Python distribution metadata 当前版本为 `0.1.0`（见 `pyproject.toml`）；它不是 E3D Addin build 版本。
 
 ## 能力概览
 
 - **会话与上下文**：检查连接、E3D 版本、项目、MDB、当前元素和操作状态；保留会话边界及读取错误。
 - **模型读取与诊断**：按显式元素读取层级、属性、Schema、数据库状态、设备和管道证据；对缺失、截断、部分结果和未知状态分别报告。
-- **PARAGON 目录工作流**：读取 Catalogue 清单、Schema 和现有 SCOM 元件模板；有限生成计划可为同一 CATE 内复制现有 SCOM 模板形成可审核草稿。
+- **PARAGON 目录工作流**：读取 Catalogue 清单、Schema 和现有 SCOM 元件模板；提供同 CATE 模板复制生成、完整 PARAM 数组参数化及独立回读，也可先形成只读生成草稿。
 - **几何与图纸**：提供有界几何观察、尺寸与连接点读取，以及参数化几何、剖面、装配、布置图和可选 SVG/DXF/PNG 输出。派生网格或图纸不等同于 E3D 原生几何或工程验收。
 - **受控编辑与 PML**：catalog 也包含明确目标的编辑、复制、显示/视图操作和 PML 工具。是否可执行由运行模式、工具参数和权限开关共同控制；请在真实会话里逐项检查目标与回执。
 
 PARAGON 的 Catalogue 数据库由用户在 E3D ADMIN 中配置。`e3d_paragon_generation_plan` 仍只生成候选草稿。新增的 `e3d_paragon_component_copy` 则提供实际生成新 SCOM 的执行路径：在同一 CATE 下复制现有模板、分配新名称，并独立回读新 REF、owner、PARAM 和规定范围内的引用。执行需要明确开启命令权限并提交原生预览的 session、build、revision 和唯一 request ID；服务不创建数据库或 CATE。
 
 `e3d_paragon_component_copy_status` 可在超时或故障后只读查询原请求账本，禁止自动重试。该能力的离线合同测试不代替隔离 Catalogue 实机验收，也不证明完整几何或工程等价。输入、执行步骤、回读范围及失败处理见[PARAGON 元件生成说明](docs/paragon-component-generation.md)。
+
+生成后可用 `e3d_paragon_component_parameters_set` 对明确 REF 的 Catalogue SCOM 预览、写入和独立回读完整 PARAM 数组，支持 1–128 个有限 DOUBLE 值且保持原数组长度。`e3d_paragon_component_parameters_status` 查询该参数请求的独立账本。复制和参数写入是两个独立操作；参数步骤失败不会自动重建或删除元件。示例、单位边界和负零传输规则见[PARAGON 参数化说明](docs/paragon-component-parameters.md)。
 
 ### 管道与目录引用链
 

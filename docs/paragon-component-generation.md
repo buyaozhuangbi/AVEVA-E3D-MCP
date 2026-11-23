@@ -2,6 +2,8 @@
 
 `e3d_paragon_component_copy` 实现一条生成新 SCOM 的受控执行路径：从现有 Catalogue SCOM 叶模板复制到其原 CATE，指定新名称，并独立回读新 REF 和规定范围内的数据。它与只生成草稿的 `e3d_paragon_generation_plan` 是不同工具。首个 recipe 固定为 `same_category_scom_copy_v1`；不接受用户 PML 源码、其他 backend 或参数修改。
 
+需要参数化时，可在复制成功并取得已验证的新 REF 后，使用独立的 [PARAM 数组写入接口](paragon-component-parameters.md)。两个操作各有预览、执行和状态查询，不构成事务。
+
 本接口的代码、HTTP、故障屏障和回读算法可离线验证；离线测试不能证明目标 E3D 安装中精确 PML 语法、运行时复制语义或工程结果。使用前需要在隔离 Catalogue 中进行实机验收。本轮开发不自动部署、重载或运行这些命令。数据库仍由用户在 ADMIN 中配置。
 
 ## 1. 获取执行预览

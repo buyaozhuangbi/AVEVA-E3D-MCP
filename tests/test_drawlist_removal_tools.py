@@ -41,7 +41,7 @@ class DrawlistRemovalToolTests(unittest.TestCase):
 
     def test_discovery_schema_permission_annotations_and_capture(self):
         tools = {tool["name"]: tool for tool in self.rpc("tools/list", {})["tools"]}
-        self.assertEqual(len(tools), 117)
+        self.assertEqual(len(tools), 119)
         self.assertEqual(sum("capture_after" in tool["inputSchema"]["properties"] for tool in tools.values()), 19)
         tool = tools["e3d_remove_drawlist_member"]
         self.assertEqual(tool["annotations"], {"readOnlyHint": False, "destructiveHint": False,

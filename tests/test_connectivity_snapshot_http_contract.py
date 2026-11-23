@@ -101,7 +101,7 @@ class ConnectivitySnapshotHttpContractTests(unittest.TestCase):
                 "NativeDatabaseFaultState.cs",
                 "MessageCursor.cs",
                 "EquipmentManifest.cs",
-                "EquipmentChildSchema.cs", "PipingSpecificationReadRequest.cs", "TeamDatabaseIdentityManifest.cs", "ParagonComponentTemplate.cs", "ParagonReferenceTrace.cs", "ParagonComponentCopy.cs",
+                "EquipmentChildSchema.cs", "PipingSpecificationReadRequest.cs", "TeamDatabaseIdentityManifest.cs", "ParagonComponentTemplate.cs", "ParagonReferenceTrace.cs", "ParagonComponentCopy.cs", "ParagonComponentParameters.cs",
                 "PipeMemberManifest.cs",
                 "ModelEditInput.cs",
                 "AttributeEditPolicy.cs",

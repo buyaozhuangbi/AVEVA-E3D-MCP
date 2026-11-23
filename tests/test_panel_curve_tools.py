@@ -24,7 +24,7 @@ class PanelCurveToolTests(unittest.TestCase):
 
     def test_both_read_only_tools_are_discoverable_with_distinct_coordinate_defaults(self):
         tools = {row["name"]: row for row in self.dispatch("tools/list", {})["tools"]}
-        self.assertEqual(len(tools), 117)
+        self.assertEqual(len(tools), 119)
         for name, default in (("e3d_panel_curve_boundary", "panel_local"),
                               ("e3d_project_panel_curve_drawing", "WORLD")):
             tool = tools[name]

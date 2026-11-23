@@ -187,7 +187,7 @@ _NATIVE_RESULT_DIAGNOSTIC_PATHS = frozenset({
     "/api/v1/view/set", "/api/v1/view/camera/set", "/api/v1/view/fit", "/api/v1/view/restore",
     "/api/v1/drawlist/visual", "/api/v1/drawlist/remove", "/api/v1/view/primitive-visual",
     "/api/v1/view/graphical-selection", "/api/v1/clash/check",
-    "/api/v1/paragon/component-copy",
+    "/api/v1/paragon/component-copy", "/api/v1/paragon/component-parameters",
 })
 
 
@@ -203,6 +203,7 @@ _WRITE_ATTEMPT_FIELDS = {
     "/api/v1/command-batch": (),
     "/api/v1/pml-script": ("execution_attempted",),
     "/api/v1/paragon/component-copy": ("creation_attempted", "native_run_attempted"),
+    "/api/v1/paragon/component-parameters": ("parameter_write_attempted",),
 }
 _ALWAYS_MUTATING_PATHS = frozenset({"/api/v1/view/fit", "/api/v1/view/restore"})
 _PML_WRITE_PATHS = frozenset({"/api/v1/command", "/api/v1/command-batch", "/api/v1/pml-script"})
@@ -234,7 +235,7 @@ def _uninformative_write_failure(method: str, path: str, payload: Any, value: di
         # Session/capacity rejections and duplicate submissions have bounded
         # execution metadata in the envelope, rather than a native result.
         receipts.append(value)
-    if path == "/api/v1/paragon/component-copy":
+    if path in {"/api/v1/paragon/component-copy", "/api/v1/paragon/component-parameters"}:
         if isinstance(receipt, dict) and isinstance(receipt.get("progress"), dict):
             receipts.append(receipt["progress"])
         receipts.append(value)
@@ -246,7 +247,7 @@ def _uninformative_write_failure(method: str, path: str, payload: Any, value: di
             return receipt["outcome_uncertain"]
         if receipt.get("success") is True or receipt.get("dry_run") is True:
             return False
-        if path in {"/api/v1/pml-script", "/api/v1/paragon/component-copy"} and receipt.get("this_submission_executed") is False:
+        if path in {"/api/v1/pml-script", "/api/v1/paragon/component-copy", "/api/v1/paragon/component-parameters"} and receipt.get("this_submission_executed") is False:
             return False
         if attempted_fields and all(receipt.get(field) is False for field in attempted_fields):
             return False
@@ -294,7 +295,8 @@ def _response_failure_diagnostics(path: str, value: dict[str, Any]) -> dict[str,
     diagnostics = {"state": value["state"]} if isinstance(value.get("state"), dict) else {}
     if path in _NATIVE_RESULT_DIAGNOSTIC_PATHS and isinstance(value.get("result"), dict):
         diagnostics["result"] = value["result"]
-    if path in {"/api/v1/paragon/component-copy", "/api/v1/paragon/component-copy/status"}:
+    if path in {"/api/v1/paragon/component-copy", "/api/v1/paragon/component-copy/status",
+                "/api/v1/paragon/component-parameters", "/api/v1/paragon/component-parameters/status"}:
         for key in ("version", "session_id", "bridge_build", "error_code"):
             if isinstance(value.get(key), str):
                 diagnostics[key] = value[key]
@@ -349,6 +351,7 @@ def _response_failure_diagnostics(path: str, value: dict[str, Any]) -> dict[str,
                 "/api/v1/paragon/catalogue-manifest", "/api/v1/paragon/catalogue-schema",
                 "/api/v1/paragon/component-template", "/api/v1/paragon/reference-trace",
                 "/api/v1/paragon/component-copy", "/api/v1/paragon/component-copy/status",
+                "/api/v1/paragon/component-parameters", "/api/v1/paragon/component-parameters/status",
                 "/api/v1/piping/specification-read"}:
         for key in ("version", "session_id", "bridge_build", "error_code"):
             if isinstance(value.get(key), str):
@@ -514,7 +517,8 @@ class BridgeClient:
                         "/api/v1/module/context", "/api/v1/paragon/catalogue-manifest",
                         "/api/v1/paragon/catalogue-schema", "/api/v1/paragon/component-template",
                         "/api/v1/paragon/reference-trace", "/api/v1/paragon/component-copy",
-                        "/api/v1/paragon/component-copy/status"}:
+                        "/api/v1/paragon/component-copy/status", "/api/v1/paragon/component-parameters",
+                        "/api/v1/paragon/component-parameters/status"}:
             value.setdefault("version", selected_version)
         return value
 

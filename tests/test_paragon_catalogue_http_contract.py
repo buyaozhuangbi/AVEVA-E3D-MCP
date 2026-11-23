@@ -75,7 +75,7 @@ class ParagonCatalogueHttpContractTests(unittest.TestCase):
             # The other managed request classes are referenced only by the
             # adapter's unchanged shared error/method branches.
             names = {"ParagonCatalogueManifest.cs", "NativeDatabaseFaultState.cs", "MessageCursor.cs",
-                     "EquipmentManifest.cs", "EquipmentChildSchema.cs", "PipingSpecificationReadRequest.cs", "TeamDatabaseIdentityManifest.cs", "ParagonComponentTemplate.cs", "ParagonReferenceTrace.cs", "ParagonComponentCopy.cs", "PipeMemberManifest.cs", "ModelEditInput.cs", "AttributeEditPolicy.cs"}
+                     "EquipmentManifest.cs", "EquipmentChildSchema.cs", "PipingSpecificationReadRequest.cs", "TeamDatabaseIdentityManifest.cs", "ParagonComponentTemplate.cs", "ParagonReferenceTrace.cs", "ParagonComponentCopy.cs", "ParagonComponentParameters.cs", "PipeMemberManifest.cs", "ModelEditInput.cs", "AttributeEditPolicy.cs"}
             for name in sorted(names):
                 shutil.copyfile(BRIDGE / name, output / name)
             shutil.copyfile(NEWTONSOFT, output / NEWTONSOFT.name)
