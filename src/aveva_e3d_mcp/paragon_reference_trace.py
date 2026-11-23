@@ -1,17 +1,10 @@
-"""Validate the HTTP receipt for the E3D21 PARAGON reference trace.
+"""Read and validate bounded E3D21 native reference-path observations.
 
-The route wraps the native prototype's result (status, trace_limit, trace)
-in the ordinary native envelope and includes two fields beside result.
-
-* context holds before/after samples, same_project_instance, same_mdb_instance and
-  boundary_agreement, captured by the same UI callback as the trace. A sample
-  has session_id, bridge_build, project, mdb and current_element (canonical
-  DBREF or null for a verified native null CE). An unread sample is itself null.
-* db_type_codes maps paths to raw SDK DbType integers, for rows where DbType
-  was actually read. Suppress this map along with trace on lost boundaries.
-
-BridgeClient must preserve the wire version for this route. A configured
-version is insufficient receipt evidence.
+The standard HTTP envelope binds the result's before/after samples to one
+native session and assembly build. Each current-element sample includes its
+REF, base type and raw SDK database code, or a verified native null. Trace
+rows and DbType evidence are suppressed if the boundary cannot be verified;
+the attempted-path budget remains available. No alternative reads are made.
 """
 
 from __future__ import annotations
@@ -26,12 +19,20 @@ from .protocol import McpServer
 TOOL = "e3d_paragon_reference_trace"
 PATH = "/api/v1/paragon/reference-trace"
 VERSION = "E3D21"
+OPERATION = "paragon_reference_trace"
 DEFAULT_TRACE_LIMIT = 24
 MAX_TRACE_LIMIT = 32
 
-_DBREF_PATTERN = r"=([1-9][0-9]{0,9})/(0|[1-9][0-9]{0,9})"
+_INT32_TEN_DIGITS = (
+    r"1[0-9]{9}|20[0-9]{8}|21[0-3][0-9]{7}|214[0-6][0-9]{6}|2147[0-3][0-9]{5}|"
+    r"21474[0-7][0-9]{4}|214748[0-2][0-9]{3}|2147483[0-5][0-9]{2}|"
+    r"21474836[0-3][0-9]|214748364[0-7]"
+)
+_POSITIVE_INT32 = rf"(?:[1-9][0-9]{{0,8}}|{_INT32_TEN_DIGITS})"
+_DBREF_PATTERN = rf"={_POSITIVE_INT32}/(?:0|{_POSITIVE_INT32})"
 _DBREF = re.compile(_DBREF_PATTERN)
 _NOUN = re.compile(r"[A-Z][A-Z0-9_]{0,63}")
+_BUILD = re.compile(r"[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}")
 _DESIGN, _CATALOGUE, _PROPERTY = 1, 2, 4
 _INT32_MAX = 2**31 - 1
 _COMPONENTS = frozenset({"SCOM", "SPRF", "SFIT", "JOIN"})
@@ -66,7 +67,8 @@ _FOLLOW = {
 _EXPANDABLE = {"resolved", "owner_read_error"}
 _DBTYPE_OBSERVED = _EXPANDABLE | {"out_of_scope"}
 _ATTEMPTED = _DBTYPE_OBSERVED | {"unresolved", "read_error"}
-_ENVELOPE_FIELDS = {"ok", "version", "session_id", "bridge_build", "context", "db_type_codes", "result"}
+_ENVELOPE_FIELDS = {"ok", "version", "session_id", "bridge_build", "result"}
+_RESULT_FIELDS = {"status", "trace_limit", "trace", "context", "db_type_codes"}
 _CONTEXT_FIELDS = {"before", "after", "same_project_instance", "same_mdb_instance", "boundary_agreement"}
 _SAMPLE_FIELDS = {"session_id", "bridge_build", "project", "mdb", "current_element"}
 _FAULT_FLAGS = {"hasfault", "nativefault", "nativedatabasefault", "nativefaultlatched"}
@@ -74,12 +76,11 @@ _FAULT_CODES = {"nativefault", "nativedatabasefault", "nativedatabasefaultexcept
 
 
 def _dbref(value: Any) -> bool:
-    match = _DBREF.fullmatch(value) if isinstance(value, str) else None
-    return match is not None and all(int(part) <= _INT32_MAX for part in match.groups())
+    return type(value) is str and 4 <= len(value) <= 22 and bool(_DBREF.fullmatch(value))
 
 
 def _parameters(args: dict[str, Any]) -> dict[str, Any]:
-    if not isinstance(args, dict) or args.keys() - {"refno", "trace_limit"}:
+    if type(args) is not dict or args.keys() - {"refno", "trace_limit"}:
         raise ValueError("PARAGON reference trace accepts only refno and trace_limit.")
     refno = args.get("refno")
     if not _dbref(refno):
@@ -96,15 +97,20 @@ def _need(condition: bool, field: str) -> None:
 
 
 def _fields(value: Any, fields: set[str]) -> bool:
-    return isinstance(value, dict) and value.keys() == fields
+    return type(value) is dict and value.keys() == fields
 
 
 def _identity_text(value: Any) -> bool:
-    return isinstance(value, str) and len(value) <= 256 and bool(value.strip()) and value.isprintable()
+    if type(value) is not str or not value.strip() or not value.isprintable():
+        return False
+    try:
+        return len(value.encode("utf-16-le")) <= 512
+    except UnicodeEncodeError:
+        return False
 
 
-def _check_embedded_fault(reply: Any) -> None:
-    # Inspect even malformed success envelopes before projecting any evidence.
+def _has_embedded_fault(reply: Any) -> bool:
+    # Inspect even malformed envelopes before classifying optional features.
     pending = [reply]
     seen = set()
     while pending:
@@ -121,16 +127,21 @@ def _check_embedded_fault(reply: Any) -> None:
             code = (marker in {"errorcode", "code", "status"} and isinstance(item, str)
                     and item.replace("_", "").casefold() in _FAULT_CODES)
             if flag or code:
-                raise BridgeError(
-                    "A native database fault stopped the PARAGON reference trace. Do not retry the read.",
-                    diagnostics={"error_code": "native_database_fault", "native_fault_latched": True,
-                                 "retry_safe": False},
-                )
+                return True
             pending.append(item)
+    return False
+
+
+def _check_embedded_fault(reply: Any) -> None:
+    if _has_embedded_fault(reply):
+        raise BridgeError(
+            "A native database fault stopped the PARAGON reference trace. Do not retry the read.",
+            diagnostics=reply,
+        )
 
 
 def _validate_boundary(reply: dict, status: str, used: int) -> None:
-    context = reply["context"]
+    context = reply["result"]["context"]
     _need(_fields(context, _CONTEXT_FIELDS), "context fields")
     before, after = context["before"], context["after"]
     for sample in (before, after):
@@ -141,7 +152,11 @@ def _validate_boundary(reply: dict, status: str, used: int) -> None:
               "context session and build binding")
         _need(all(_identity_text(sample[key]) for key in ("project", "mdb")), "context project and MDB")
         ce = sample["current_element"]
-        _need(ce is None or _dbref(ce), "context current element")
+        if ce is not None:
+            _need(_fields(ce, {"refno", "type", "db_type_code"}), "context typed current element fields")
+            _need(_dbref(ce["refno"]) and type(ce["type"]) is str and bool(_NOUN.fullmatch(ce["type"]))
+                  and type(ce["db_type_code"]) is int and -2**31 <= ce["db_type_code"] <= _INT32_MAX,
+                  "context typed current element")
 
     same_project, same_mdb = context["same_project_instance"], context["same_mdb_instance"]
     if before is None or after is None:
@@ -250,9 +265,10 @@ def validate_paragon_reference_trace_receipt(reply: Any, args: dict[str, Any]) -
     _check_embedded_fault(reply)
     _need(_fields(reply, _ENVELOPE_FIELDS) and reply["ok"] is True and reply["version"] == VERSION,
           "native E3D21 HTTP envelope")
-    _need(all(_identity_text(reply[key]) for key in ("session_id", "bridge_build")), "session and build identities")
+    _need(_identity_text(reply["session_id"]) and type(reply["bridge_build"]) is str
+          and bool(_BUILD.fullmatch(reply["bridge_build"])), "session and canonical build identities")
     result = reply["result"]
-    _need(_fields(result, {"status", "trace_limit", "trace"}), "trace result fields")
+    _need(_fields(result, _RESULT_FIELDS), "trace result fields")
     status = result["status"]
     _need(isinstance(status, str) and status in {"observed", "partial", "unavailable", "busy", "context_unverified"},
           "trace result status")
@@ -262,7 +278,7 @@ def validate_paragon_reference_trace_receipt(reply: Any, args: dict[str, Any]) -
     _need(type(limit) is int and limit == payload["trace_limit"] and type(used) is int and 0 <= used <= limit
           and type(reached) is bool and (not reached or used == limit), "trace budget versus request")
     _validate_boundary(reply, status, used)
-    trace, db_types = result["trace"], reply["db_type_codes"]
+    trace, db_types = result["trace"], result["db_type_codes"]
     _need(isinstance(trace, dict) and isinstance(db_types, dict) and db_types.keys() <= trace.keys()
           and all(type(code) is int and -2**31 <= code <= _INT32_MAX for code in db_types.values()),
           "trace rows and observed DbType codes")
@@ -274,12 +290,49 @@ def validate_paragon_reference_trace_receipt(reply: Any, args: dict[str, Any]) -
     return reply
 
 
+def _unavailable(version: str, payload: dict[str, Any], code: str, message: str) -> dict[str, Any]:
+    return {
+        "ok": True,
+        "version": version,
+        "result": {
+            "operation": OPERATION,
+            "requested_refno": payload["refno"],
+            "available": False,
+            "status": "unknown",
+            "success": False,
+            "complete": False,
+            "read_only": True,
+            "single_dispatch": None,
+            "atomic_snapshot": False,
+            "read_errors": [{"code": code, "message": message}],
+        },
+    }
+
+
 def paragon_reference_trace(bridge: BridgeClient, args: dict[str, Any]) -> dict[str, Any]:
     payload = _parameters(args)
-    if bridge.settings.mode != "bridge" or bridge._selected_version(None) != VERSION:
-        raise BridgeError("PARAGON reference trace requires E3D21 bridge mode and a supporting Addin.")
-    reply = bridge._request("POST", PATH, payload, version=VERSION)
-    return validate_paragon_reference_trace_receipt(reply, payload)
+    version = bridge._selected_version(None)
+    if bridge.settings.mode != "bridge" or version != VERSION:
+        return _unavailable(version, payload, "native_unavailable",
+                            "PARAGON reference trace requires E3D21 bridge mode and a supporting Addin.")
+    try:
+        reply = bridge._request("POST", PATH, payload, version=VERSION)
+    except BridgeError as error:
+        if _has_embedded_fault(error.diagnostics) or error.transport_error:
+            raise
+        if error.response_invalid:
+            return _unavailable(version, payload, "invalid_native_response", str(error))
+        if error.http_status == 404:
+            return _unavailable(version, payload, "native_feature_unavailable",
+                                "The running Addin does not expose the PARAGON reference trace reader.")
+        raise
+    _check_embedded_fault(reply)
+    try:
+        return validate_paragon_reference_trace_receipt(reply, payload)
+    except BridgeError as error:
+        if not error.response_invalid:
+            raise
+        return _unavailable(version, payload, "invalid_native_response", str(error))
 
 
 def register_paragon_reference_trace(server: McpServer, bridge: BridgeClient) -> None:
@@ -291,7 +344,8 @@ def register_paragon_reference_trace(server: McpServer, bridge: BridgeClient) ->
         "distinct paths. Unread paths remain unknown. The receipt provides reference evidence only and establishes "
         "neither engineering connectivity nor material compatibility. Requires a supporting E3D21 Addin.",
         {"type": "object", "properties": {
-            "refno": {"type": "string", "pattern": "^" + _DBREF_PATTERN + r"$", "maxLength": 22,
+            "refno": {"type": "string", "pattern": "^" + _DBREF_PATTERN + r"(?![\s\S])",
+                      "minLength": 4, "maxLength": 22,
                       "description": "Explicit =database/element DBREF with canonical ASCII Int32 components."},
             "trace_limit": {"type": "integer", "minimum": 1, "maximum": MAX_TRACE_LIMIT,
                             "default": DEFAULT_TRACE_LIMIT},

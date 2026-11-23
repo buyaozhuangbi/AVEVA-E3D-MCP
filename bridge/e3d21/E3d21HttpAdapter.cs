@@ -91,6 +91,7 @@ public sealed class E3d21HttpAdapter : IDisposable
         bool pipingSpecificationReadQuery = false;
         bool teamDatabaseIdentityManifestQuery = false;
         bool paragonComponentTemplateQuery = false;
+        bool paragonReferenceTraceQuery = false;
         bool projectCatalogProbe = false;
         try
         {
@@ -109,6 +110,7 @@ public sealed class E3d21HttpAdapter : IDisposable
             pipingSpecificationReadQuery = path == "/api/v1/piping/specification-read";
             teamDatabaseIdentityManifestQuery = path == "/api/v1/database/team-identity-manifest";
             paragonComponentTemplateQuery = path == "/api/v1/paragon/component-template";
+            paragonReferenceTraceQuery = path == "/api/v1/paragon/reference-trace";
             projectCatalogProbe = path == "/api/v1/database/project-catalog-probe";
             object response;
             if (method == "GET" && path == "/health")
@@ -134,6 +136,7 @@ public sealed class E3d21HttpAdapter : IDisposable
                         .Concat(context is IE3d21PipingSpecificationReadContext ? new[] { "piping_specification_read" } : Array.Empty<string>())
                         .Concat(context is IE3d21TeamDatabaseIdentityManifestContext ? new[] { "team_database_identity_manifest" } : Array.Empty<string>())
                         .Concat(context is IE3d21ParagonComponentTemplateContext ? new[] { "paragon_component_template" } : Array.Empty<string>())
+                        .Concat(context is IE3d21ParagonReferenceTraceContext ? new[] { "paragon_reference_trace" } : Array.Empty<string>())
                         .Concat(context is IE3d21PipeMemberManifestContext ? new[] { "pipe_member_manifest" } : Array.Empty<string>()).ToArray() };
             }
             else if (method == "GET" && path == "/api/v1/module/context")
@@ -215,6 +218,27 @@ public sealed class E3d21HttpAdapter : IDisposable
                 response = new { ok = true, version = "E3D21", session_id = sessionId,
                     bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
                     result = templateContext.ReadParagonComponentTemplate(template.Refno, sessionId) };
+            }
+            else if (method == "POST" && path == "/api/v1/paragon/reference-trace")
+            {
+                var traceContext = context as IE3d21ParagonReferenceTraceContext;
+                if (traceContext == null)
+                {
+                    await WriteJsonAsync(request.Response, new { ok = false, version = "E3D21", session_id = sessionId,
+                        bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
+                        error = "PARAGON reference traces are unavailable on this bridge." }, 404).ConfigureAwait(false);
+                    return;
+                }
+                if (request.Request.QueryString.Count != 0)
+                    throw new ArgumentException("PARAGON reference traces accept JSON parameters only.");
+                JObject body = await ReadUniqueBodyAsync(request.Request, 4096).ConfigureAwait(false);
+                if (body.Properties().Any(property => property.Name != "refno" && property.Name != "trace_limit"))
+                    throw new ArgumentException("Unknown PARAGON reference trace parameter.");
+                var trace = ParagonReferenceTraceRequest.Validate(ReadString(body, "refno", null),
+                    ReadInteger(body, "trace_limit", ParagonReferenceTraceRequest.DefaultTraceLimit));
+                response = new { ok = true, version = "E3D21", session_id = sessionId,
+                    bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
+                    result = traceContext.ReadParagonReferenceTrace(trace.Refno, trace.TraceLimit, sessionId) };
             }
             else if (method == "POST" && path == "/api/v1/database/team-identity-manifest")
             {
@@ -1240,6 +1264,14 @@ public sealed class E3d21HttpAdapter : IDisposable
                         error = "PARAGON component templates require POST." }, 405).ConfigureAwait(false);
                     return;
                 }
+                if (paragonReferenceTraceQuery)
+                {
+                    request.Response.AddHeader("Allow", "POST");
+                    await WriteJsonAsync(request.Response, new { ok = false, version = "E3D21", session_id = sessionId,
+                        bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
+                        error = "PARAGON reference traces require POST." }, 405).ConfigureAwait(false);
+                    return;
+                }
                 if (teamDatabaseIdentityManifestQuery)
                 {
                     request.Response.AddHeader("Allow", "POST");
@@ -1313,6 +1345,20 @@ public sealed class E3d21HttpAdapter : IDisposable
                 return;
             }
             await WriteJsonAsync(request.Response, response, 200).ConfigureAwait(false);
+        }
+        catch (NativeDatabaseFaultException ex) when (paragonReferenceTraceQuery)
+        {
+            await WriteJsonAsync(request.Response, new { ok = false, version = "E3D21", session_id = sessionId,
+                bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
+                error_code = "native_database_fault", native_fault_latched = true, retry_safe = false,
+                error = ParagonReferenceTraceRequest.ErrorText(ex.Message) }, 500).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (paragonReferenceTraceQuery)
+        {
+            await WriteJsonAsync(request.Response, new { ok = false, version = "E3D21", session_id = sessionId,
+                bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
+                error = ex is JsonReaderException ? "Request body is not valid JSON." : ParagonReferenceTraceRequest.ErrorText(ex.Message) },
+                ex is ArgumentException || ex is JsonException ? 400 : 500).ConfigureAwait(false);
         }
         catch (NativeDatabaseFaultException ex) when (paragonComponentTemplateQuery)
         {

@@ -33,7 +33,11 @@ htmlcov/
 artifacts/
 build/
 /prototypes/
-/scripts/
+/scripts/*
+!/scripts/live_mcp.py
+!/scripts/build-pump-hd002-live.py
+!/scripts/verify-pump-hd002-panels.py
+!/scripts/test-e3d21-section-readonly.py
 /tmp-*
 /tmp_*
 *.log
@@ -48,9 +52,6 @@ build/
 /tests/test_material_assembly_tools.py
 /tests/test_material_assembly_tiles_tools.py
 /tests/test_outline_axis_tools.py
-/tests/test_panel_curve_drawing.py
-/tests/test_panel_curve_boundary.py
-/tests/test_primitive_csg_mesh.py
 /tests/test_primitive_csg_tools.py
 /tests/test_modeling_plans_readonly_script.py
 /tests/test_native_clash_equi_journal.py

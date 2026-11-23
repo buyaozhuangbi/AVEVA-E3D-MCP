@@ -332,7 +332,8 @@ def _response_failure_diagnostics(path: str, value: dict[str, Any]) -> dict[str,
                 diagnostics[key] = value[key]
     if path in {"/health", "/api/v1/database/team-identity-manifest", "/api/v1/module/context",
                 "/api/v1/paragon/catalogue-manifest", "/api/v1/paragon/catalogue-schema",
-                "/api/v1/paragon/component-template", "/api/v1/piping/specification-read"}:
+                "/api/v1/paragon/component-template", "/api/v1/paragon/reference-trace",
+                "/api/v1/piping/specification-read"}:
         for key in ("version", "session_id", "bridge_build", "error_code"):
             if isinstance(value.get(key), str):
                 diagnostics[key] = value[key]
@@ -495,7 +496,8 @@ class BridgeClient:
         if path not in {"/health", "/api/v1/messages/window", "/api/v1/equipment/child-schema",
                         "/api/v1/piping/specification-read", "/api/v1/database/team-identity-manifest",
                         "/api/v1/module/context", "/api/v1/paragon/catalogue-manifest",
-                        "/api/v1/paragon/catalogue-schema", "/api/v1/paragon/component-template"}:
+                        "/api/v1/paragon/catalogue-schema", "/api/v1/paragon/component-template",
+                        "/api/v1/paragon/reference-trace"}:
             value.setdefault("version", selected_version)
         return value
 

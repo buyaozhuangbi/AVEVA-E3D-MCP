@@ -88,7 +88,7 @@ class EquipmentChildSchemaHttpContractTests(unittest.TestCase):
             output = Path(temporary)
             (output / "Harness.cs").write_text(harness, encoding="utf-8")
             for name in (
-                "EquipmentChildSchema.cs", "PipingSpecificationReadRequest.cs", "TeamDatabaseIdentityManifest.cs", "ParagonComponentTemplate.cs", "ConnectivitySnapshot.cs", "ModuleContext.cs",
+                "EquipmentChildSchema.cs", "PipingSpecificationReadRequest.cs", "TeamDatabaseIdentityManifest.cs", "ParagonComponentTemplate.cs", "ParagonReferenceTrace.cs", "ConnectivitySnapshot.cs", "ModuleContext.cs",
                 "ParagonCatalogueSchema.cs", "ParagonCatalogueManifest.cs",
                 "NativeDatabaseFaultState.cs", "MessageCursor.cs", "EquipmentManifest.cs",
                 "PipeMemberManifest.cs", "ModelEditInput.cs", "AttributeEditPolicy.cs",

@@ -2,7 +2,7 @@
 
 面向 AVEVA Everything3D（E3D）的模型开发与调试 MCP 服务。Python MCP server 通过标准输入/输出（stdio）连接 Codex、Claude Desktop、Cursor 等客户端；需要读取真实 E3D 状态时，再由 E3D 进程内的 .NET Addin 提供本机 HTTP bridge。
 
-当前 MCP catalog 注册 **114 个工具**。`tools/list` 返回的工具定义和可选功能是当前实例能力的权威来源；实际能力受 E3D 版本、加载的 Addin 和配置影响。Python distribution metadata 当前版本为 `0.1.0`（见 `pyproject.toml`）；它不是 E3D Addin build 版本。
+当前 MCP catalog 注册 **115 个工具**。`tools/list` 返回的工具定义和可选功能是当前实例能力的权威来源；实际能力受 E3D 版本、加载的 Addin 和配置影响。Python distribution metadata 当前版本为 `0.1.0`（见 `pyproject.toml`）；它不是 E3D Addin build 版本。
 
 ## 能力概览
 
@@ -13,6 +13,20 @@
 - **受控编辑与 PML**：catalog 也包含明确目标的编辑、复制、显示/视图操作和 PML 工具。是否可执行由运行模式、工具参数和权限开关共同控制；请在真实会话里逐项检查目标与回执。
 
 PARAGON 的 Catalogue 数据库由用户在 E3D ADMIN 中配置。本服务不会替用户配置 ADMIN，也不会由生成计划创建数据库、CATE 或元件。该计划只生成候选草稿，不会自动提交 PML 预览或执行。
+
+### 管道与目录引用链
+
+`e3d_paragon_reference_trace` 从一个显式数值 DBREF 开始，按固定路径读取 Design 元素的 SPREF、Catalogue 的 CATREF/PRTREF/OWNER，以及相关 Property 引用。它可用于核对管道组件、目录元件和属性记录之间实际观察到的关联，不判定选材、连接或工程兼容性。
+
+```json
+{"name":"e3d_paragon_reference_trace","arguments":{"refno":"=1/21","trace_limit":24}}
+```
+
+示例 DBREF 需要替换为当前会话中的真实引用。输入只接受规范数值引用，拒绝名称、隐式 CE、空白和前导零。默认预算为 24 个路径，最多 32 个；根节点、重复引用和失败尝试都占预算。`trace_limit.reached=true` 表示还有固定路径未读取，不能当作完整链。
+
+检查 `result.status`、每行状态和 `result.context`：只有前后会话、Addin build、项目/MDB 实例与类型化 CE 边界一致，才返回图中身份。边界丢失会保留尝试计数并清空引用图；原生数据库故障立即停止读取，禁止自动重试。HTTP 路由是 `POST /api/v1/paragon/reference-trace`，需要 Addin 声明 `paragon_reference_trace` 功能。
+
+完整输入、固定路径和覆盖语义见[引用链接口合同](docs/paragon-reference-trace.md)。
 
 ## 要求
 
@@ -85,7 +99,7 @@ E3D21 HTTP listener 只绑定 loopback 地址 `127.0.0.1`，不提供请求认�
 
 ## 测试
 
-在仓库根目录安装 pytest 并运行离线测试：
+MCP 服务支持 Python 3.10+；测试辅助客户端使用 `tomllib`，运行完整测试集需要 Python 3.11+。在仓库根目录安装 pytest 并运行离线测试：
 
 ```powershell
 python -m pip install pytest

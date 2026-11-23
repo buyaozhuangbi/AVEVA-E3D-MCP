@@ -77,7 +77,7 @@ class ParagonEvidenceHttpContractTests(unittest.TestCase):
         # Only pure managed interfaces/request types participate. The actual
         # E3d21ModuleContext and catalogue schema readers remain unreferenced.
         names = {"ModuleContext.cs", "ParagonCatalogueSchema.cs", "ParagonCatalogueManifest.cs", "NativeDatabaseFaultState.cs",
-                 "MessageCursor.cs", "EquipmentManifest.cs", "EquipmentChildSchema.cs", "PipingSpecificationReadRequest.cs", "TeamDatabaseIdentityManifest.cs", "ParagonComponentTemplate.cs", "PipeMemberManifest.cs", "ModelEditInput.cs", "AttributeEditPolicy.cs"}
+                 "MessageCursor.cs", "EquipmentManifest.cs", "EquipmentChildSchema.cs", "PipingSpecificationReadRequest.cs", "TeamDatabaseIdentityManifest.cs", "ParagonComponentTemplate.cs", "ParagonReferenceTrace.cs", "PipeMemberManifest.cs", "ModelEditInput.cs", "AttributeEditPolicy.cs"}
         with tempfile.TemporaryDirectory(prefix="paragon-evidence-http-") as temporary:
             output = Path(temporary)
             (output / "Harness.cs").write_text(harness, encoding="utf-8")

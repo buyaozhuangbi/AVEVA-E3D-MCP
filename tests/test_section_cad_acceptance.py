@@ -2,10 +2,15 @@
 from __future__ import annotations
 
 import importlib.util
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
+import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
@@ -23,6 +28,28 @@ OUTER = closed([(0, 0), (10, 0), (10, 10), (0, 10)])
 
 
 class SectionCadAcceptanceTests(unittest.TestCase):
+    def test_default_preview_does_not_construct_client_or_write_evidence(self):
+        request = {"refno": "=1/2", "include_svg": True, "include_dxf": True}
+        with tempfile.TemporaryDirectory() as directory:
+            request_path, output_dir = Path(directory) / "request.json", Path(directory) / "evidence"
+            request_path.write_text(json.dumps(request), encoding="utf-8")
+            with patch.object(ACCEPTANCE, "LiveMcp") as live, redirect_stdout(StringIO()) as output:
+                self.assertEqual(ACCEPTANCE.main(["--request-json", str(request_path), "--output-dir", str(output_dir)]), 0)
+            preview = json.loads(output.getvalue())
+            self.assertEqual(preview["mode"], "offline_preview")
+            self.assertEqual(preview["request"], request)
+            self.assertEqual((preview["native_calls"], preview["artifact_writes"]), (0, 0))
+            self.assertFalse(preview["execution_attempted"])
+            self.assertFalse(output_dir.exists())
+            live.assert_not_called()
+
+    def test_live_requires_explicit_output_before_request_read(self):
+        with patch.object(ACCEPTANCE, "LiveMcp") as live, redirect_stderr(StringIO()):
+            with self.assertRaises(SystemExit) as failure:
+                ACCEPTANCE.main(["--live", "--request-json", "missing-request.json"])
+            self.assertEqual(failure.exception.code, 2)
+            live.assert_not_called()
+
     def test_recovers_oriented_loops_from_shuffled_cad_endpoints(self):
         hole = closed([(3, 2), (3, 8), (4, 8), (4, 2)])
         lines = [SimpleNamespace(dxf=SimpleNamespace(start=(*a, 0), end=(*b, 0)))

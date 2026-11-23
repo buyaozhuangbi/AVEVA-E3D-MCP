@@ -15,7 +15,7 @@ from aveva_e3d_mcp.tools import create_server
 
 BASELINE = ROOT / "tests/fixtures/equipment_child_schema_catalog109.json"
 BASELINE_SHA256 = "b40da5445a818cc93fa5050eab311782db8b15cdc062a36858974d89a49e2d34"
-ADDED_TOOLS = {"e3d_equipment_child_schema", "e3d_piping_specification_read", "e3d_team_database_identity_manifest", "e3d_paragon_generation_plan", "e3d_paragon_component_template"}
+ADDED_TOOLS = {"e3d_equipment_child_schema", "e3d_piping_specification_read", "e3d_team_database_identity_manifest", "e3d_paragon_generation_plan", "e3d_paragon_component_template", "e3d_paragon_reference_trace"}
 
 
 class EquipmentChildSchemaCatalogCompatibilityTests(unittest.TestCase):
@@ -28,9 +28,9 @@ class EquipmentChildSchemaCatalogCompatibilityTests(unittest.TestCase):
         )["result"]["tools"]
 
         self.assertEqual(len(baseline), 109)
-        self.assertEqual(len(current), 114)
+        self.assertEqual(len(current), 115)
         self.assertEqual(len({tool["name"] for tool in baseline}), 109)
-        self.assertEqual(len({tool["name"] for tool in current}), 114)
+        self.assertEqual(len({tool["name"] for tool in current}), 115)
         old_by_name = {tool["name"]: tool for tool in baseline}
         current_by_name = {tool["name"]: tool for tool in current}
         self.assertEqual(set(current_by_name) - set(old_by_name), ADDED_TOOLS)

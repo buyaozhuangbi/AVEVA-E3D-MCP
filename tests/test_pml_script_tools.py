@@ -52,7 +52,7 @@ class PmlScriptToolsTests(unittest.TestCase):
     def test_discovery_source_contract_preview_default_and_mutation_annotations(self):
         discovery = self.server._dispatch({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}})["result"]
         tools = {item["name"]: item for item in discovery["tools"]}
-        self.assertEqual(len(tools), 114)
+        self.assertEqual(len(tools), 115)
         tool = tools["e3d_execute_pml_script"]
         schema = tool["inputSchema"]
         self.assertEqual(schema["required"], ["source"])

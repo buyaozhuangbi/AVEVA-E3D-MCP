@@ -1,1 +1,4 @@
 * text=auto
+
+# These immutable catalog baselines were hashed with CRLF checkout bytes.
+tests/fixtures/*catalog*.json text eol=crlf

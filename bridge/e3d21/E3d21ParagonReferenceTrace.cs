@@ -7,35 +7,60 @@ using Aveva.Core.Database;
 
 namespace E3d21AiBridge;
 
-// Offline POC. This file has no HTTP registration or production project entry.
-public sealed partial class E3d21Context
+public sealed partial class E3d21Context : IE3d21ParagonReferenceTraceContext
 {
-    internal const int DefaultParagonTraceLimit = 24;
-    internal const int MaximumParagonTraceLimit = 32;
-    private static readonly Regex ParagonTraceReference = new Regex(@"\A=([1-9][0-9]{0,9})/(0|[1-9][0-9]{0,9})\z");
     private static readonly Regex ParagonTraceType = new Regex(@"\A[A-Z][A-Z0-9_]{0,63}\z");
 
-    internal Dictionary<string, object> ReadParagonReferenceTrace(string refno, int traceLimit = DefaultParagonTraceLimit)
+    public object ReadParagonReferenceTrace(string refno, int traceLimit, string sessionId)
     {
-        var match = ParagonTraceReference.Match(refno ?? "");
-        if (!match.Success || !int.TryParse(match.Groups[1].Value, NumberStyles.None, CultureInfo.InvariantCulture, out int database) ||
-            !int.TryParse(match.Groups[2].Value, NumberStyles.None, CultureInfo.InvariantCulture, out int element))
-            throw new ArgumentException("refno must be a canonical numeric =database/element reference.", nameof(refno));
-        if (traceLimit < 1 || traceLimit > MaximumParagonTraceLimit)
-            throw new ArgumentOutOfRangeException(nameof(traceLimit), "trace_limit must be between 1 and 32.");
-
-        var trace = new ParagonTrace(traceLimit);
+        var request = ParagonReferenceTraceRequest.Validate(refno, traceLimit);
+        if (!ParagonTraceIdentityText(sessionId))
+            throw new ArgumentException("A printable server-owned session identity of at most 256 UTF16 units is required.", nameof(sessionId));
+        string build = typeof(E3d21Context).Module.ModuleVersionId.ToString("D");
+        var trace = new ParagonTrace(request.TraceLimit);
+        // This managed latch check must precede even the busy outcome.
+        if (nativeFaultState != null && nativeFaultState.HasFault) throw new NativeDatabaseFaultException();
         if (IsCommandActive()) return trace.Result("busy");
         return OnUi(() =>
         {
             if (IsCommandActive()) return trace.Result("busy");
-            var before = ParagonTraceBoundary.Read();
+            var before = ParagonTraceBoundary.Read(sessionId, build);
             if (before == null) return trace.Result("context_unverified");
-            trace.Start(refno, new[] { database, element });
-            if (!before.AgreesWith(ParagonTraceBoundary.Read()))
-                return trace.Result("context_unverified"); // Do not publish identities read across a changed boundary.
-            return trace.Result();
+            trace.Start(request.Refno, request.Pair);
+            var after = ParagonTraceBoundary.Read(sessionId, build);
+            bool? sameProject = after == null ? (bool?)null : ReferenceEquals(before.ProjectHandle, after.ProjectHandle);
+            bool? sameMdb = after == null ? (bool?)null : ReferenceEquals(before.MdbHandle, after.MdbHandle);
+            bool? agreement = after == null ? (bool?)null : before.AgreesWith(after);
+            var context = new Dictionary<string, object>
+            {
+                ["before"] = before.Sample, ["after"] = after?.Sample,
+                ["same_project_instance"] = sameProject, ["same_mdb_instance"] = sameMdb,
+                ["boundary_agreement"] = agreement
+            };
+            // Attempts stay counted, but no graph identities cross a lost boundary.
+            return trace.Result(agreement == true ? null : "context_unverified", context);
         });
+    }
+
+    private static bool ParagonTraceIdentityText(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Length > 256) return false;
+        for (int index = 0; index < value.Length; index++)
+        {
+            char character = value[index];
+            UnicodeCategory category = CharUnicodeInfo.GetUnicodeCategory(value, index);
+            if (category == UnicodeCategory.Control || category == UnicodeCategory.Format
+                || category == UnicodeCategory.LineSeparator || category == UnicodeCategory.ParagraphSeparator
+                || category == UnicodeCategory.SpaceSeparator && character != ' '
+                || category == UnicodeCategory.PrivateUse || category == UnicodeCategory.OtherNotAssigned) return false;
+            if (char.IsHighSurrogate(character))
+            {
+                if (index + 1 == value.Length || !char.IsLowSurrogate(value[index + 1])) return false;
+                index++;
+            }
+            else if (char.IsLowSurrogate(character)) return false;
+        }
+        return true;
     }
 
     private static bool ParagonTraceNullPair(int[] pair) => pair != null && pair.Length == 2 && pair[0] == 0 && pair[1] == 0;
@@ -46,11 +71,11 @@ public sealed partial class E3d21Context
 
     private sealed class ParagonTraceBoundary
     {
-        private Project project;
-        private MDB mdb;
-        private string projectName, mdbName, ce;
+        internal Project ProjectHandle;
+        internal MDB MdbHandle;
+        internal Dictionary<string, object> Sample;
 
-        internal static ParagonTraceBoundary Read()
+        internal static ParagonTraceBoundary Read(string sessionId, string build)
         {
             try
             {
@@ -59,7 +84,7 @@ public sealed partial class E3d21Context
                 if (ReferenceEquals(project, null) || ReferenceEquals(mdb, null)) return null;
                 var projectName = NativeRead(() => project.Name);
                 var mdbName = NativeRead(() => mdb.Name);
-                if (string.IsNullOrWhiteSpace(projectName) || string.IsNullOrWhiteSpace(mdbName)) return null;
+                if (!ParagonTraceIdentityText(projectName) || !ParagonTraceIdentityText(mdbName)) return null;
                 var ce = NativeRead(() => Aveva.Core.Database.CurrentElement.Element);
                 // A failed or unverified CE read is different from a native null CE.
                 if (ReferenceEquals(ce, null)) return null;
@@ -68,7 +93,25 @@ public sealed partial class E3d21Context
                 string reference = ParagonTraceFormat(pair);
                 if (isNull ? !ParagonTraceNullPair(pair) : reference == null || !NativeRead(() => ce.IsValid) || NativeRead(() => ce.IsDeleted))
                     return null;
-                return new ParagonTraceBoundary { project = project, mdb = mdb, projectName = projectName, mdbName = mdbName, ce = reference };
+                Dictionary<string, object> identity = null;
+                if (!isNull)
+                {
+                    var type = NativeRead(() => ce.ElementType); // SDK base noun, including UDET instances.
+                    if (ReferenceEquals(type, null) || !NativeRead(() => type.IsValid)) return null;
+                    string noun = NativeRead(() => type.ShortName);
+                    if (noun == null || !ParagonTraceType.IsMatch(noun)) return null;
+                    int code = (int)NativeRead(() => ce.DbType);
+                    identity = new Dictionary<string, object> { ["refno"] = reference, ["type"] = noun, ["db_type_code"] = code };
+                }
+                return new ParagonTraceBoundary
+                {
+                    ProjectHandle = project, MdbHandle = mdb,
+                    Sample = new Dictionary<string, object>
+                    {
+                        ["session_id"] = sessionId, ["bridge_build"] = build,
+                        ["project"] = projectName, ["mdb"] = mdbName, ["current_element"] = identity
+                    }
+                };
             }
             catch (Exception)
             {
@@ -77,8 +120,17 @@ public sealed partial class E3d21Context
             }
         }
 
-        internal bool AgreesWith(ParagonTraceBoundary after) => after != null && ReferenceEquals(project, after.project)
-            && ReferenceEquals(mdb, after.mdb) && projectName == after.projectName && mdbName == after.mdbName && ce == after.ce;
+        internal bool AgreesWith(ParagonTraceBoundary after)
+        {
+            if (after == null || !ReferenceEquals(ProjectHandle, after.ProjectHandle) || !ReferenceEquals(MdbHandle, after.MdbHandle)) return false;
+            foreach (string key in new[] { "session_id", "bridge_build", "project", "mdb" })
+                if (!Equals(Sample[key], after.Sample[key])) return false;
+            var ce = Sample["current_element"] as Dictionary<string, object>;
+            var other = after.Sample["current_element"] as Dictionary<string, object>;
+            if (ce == null || other == null) return ce == null && other == null;
+            return Equals(ce["refno"], other["refno"]) && Equals(ce["type"], other["type"])
+                && Equals(ce["db_type_code"], other["db_type_code"]);
+        }
     }
 
     private sealed class ParagonTrace
@@ -86,6 +138,7 @@ public sealed partial class E3d21Context
         private const string Root = "root";
         private readonly int limit;
         private readonly Dictionary<string, Row> rows = new Dictionary<string, Row>(StringComparer.Ordinal);
+        private readonly Dictionary<string, int> dbTypeCodes = new Dictionary<string, int>(StringComparer.Ordinal);
         private readonly HashSet<string> active = new HashSet<string>(StringComparer.Ordinal);
         private bool limitReached;
 
@@ -103,7 +156,7 @@ public sealed partial class E3d21Context
             Visit(Root, _ => NativeRead(() => DbElement.GetElement(pair)), RootAllowed, requested);
         }
 
-        internal Dictionary<string, object> Result(string unavailable = null)
+        internal Dictionary<string, object> Result(string unavailable = null, Dictionary<string, object> context = null)
         {
             bool rootObserved = rows.TryGetValue(Root, out Row root) && (root.Status == "resolved" || root.Status == "owner_read_error");
             string status = unavailable ?? (!rootObserved ? "unavailable" :
@@ -113,7 +166,13 @@ public sealed partial class E3d21Context
                 ["status"] = status,
                 ["trace_limit"] = new Dictionary<string, object> { ["limit"] = limit, ["used"] = rows.Count, ["reached"] = limitReached },
                 ["trace"] = unavailable == null ? rows.ToDictionary(item => item.Key, item => item.Value.ToResult(), StringComparer.Ordinal)
-                    : new Dictionary<string, Dictionary<string, object>>(StringComparer.Ordinal)
+                    : new Dictionary<string, Dictionary<string, object>>(StringComparer.Ordinal),
+                ["context"] = context ?? new Dictionary<string, object>
+                {
+                    ["before"] = null, ["after"] = null, ["same_project_instance"] = null,
+                    ["same_mdb_instance"] = null, ["boundary_agreement"] = null
+                },
+                ["db_type_codes"] = unavailable == null ? dbTypeCodes : new Dictionary<string, int>(StringComparer.Ordinal)
             };
         }
 
@@ -156,6 +215,7 @@ public sealed partial class E3d21Context
                 row.Type = noun;
                 if (active.Contains(reference)) { row.Status = "cycle"; return; }
                 db = NativeRead(() => target.DbType);
+                dbTypeCodes.Add(path, (int)db);
                 if (!inScope(db, noun)) { row.Status = "out_of_scope"; return; }
                 row.Status = "resolved";
             }

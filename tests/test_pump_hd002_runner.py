@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from copy import deepcopy
 import importlib.util
 from io import StringIO
@@ -19,6 +19,9 @@ sys.path.insert(0, str(SCRIPTS))
 SPEC = importlib.util.spec_from_file_location("pump_hd002_runner", SCRIPTS / "build-pump-hd002-live.py")
 runner = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(runner)
+VERIFIER_SPEC = importlib.util.spec_from_file_location("pump_example_panel_verifier", SCRIPTS / "verify-pump-hd002-panels.py")
+verifier = importlib.util.module_from_spec(VERIFIER_SPEC)
+VERIFIER_SPEC.loader.exec_module(verifier)
 
 
 def envelope(value):
@@ -65,7 +68,7 @@ def panel_item():
 
 
 def panel_geometry():
-    return {"success": True, "complete": True, "partial": False, "element": {"refno": "=1/30", "type": "PANEL", "name": "/HD2-case-panel"},
+    return {"success": True, "complete": True, "partial": False, "element": {"refno": "=1/30", "type": "PANEL", "name": runner.NAME_PREFIX + "case-panel"},
         "unit": "mm", "coordinate_frame": "=1/30", "coordinate_source": "PAVE POS qualified WRT PANE",
         "thickness_mm": 5, "native_justification": "CENT", "loop_count": 1, "vertex_count": 3,
         "editable": True, "edit_reasons": [], "revision": "a" * 64,
@@ -259,7 +262,7 @@ class SelectionAndStorageTests(unittest.TestCase):
                 if tool == "e3d_status":
                     return {"ok": True, "connected": True, "session_id": "same", "state": {"database_ready": True}}
                 if tool == "e3d_project_info":
-                    return {"ok": True, "project": {"name": "APS", "mdb": "ALL", "current_element": "=1/0"}}
+                    return {"ok": True, "project": {"name": runner.EXPECTED_PROJECT, "mdb": runner.EXPECTED_MDB, "current_element": "=1/0"}}
                 keys = {"e3d_query": "root_recovery_query", "e3d_list_members": "root_recovery_owner",
                         "e3d_spatial_info": "root_recovery_spatial", "e3d_read_attributes": "root_recovery_attributes"}
                 if tool in keys:
@@ -295,7 +298,7 @@ class SelectionAndStorageTests(unittest.TestCase):
                         if tool == "e3d_status":
                             return {"ok": True, "connected": True, "session_id": "same", "state": {"database_ready": True}}
                         if tool == "e3d_project_info":
-                            return {"ok": True, "project": {"name": "APS", "mdb": "ALL", "current_element": "=1/0"}}
+                            return {"ok": True, "project": {"name": runner.EXPECTED_PROJECT, "mdb": runner.EXPECTED_MDB, "current_element": "=1/0"}}
                         if tool == "e3d_query":
                             return {"ok": True, "elements": []}
                         if tool == "e3d_create_element":
@@ -410,9 +413,12 @@ os._exit(0)
             report.write_text("invalid journal to prove it was never read")
             with runner.RunnerLock(report), patch.object(runner, "REPORT", report), \
                     patch.object(runner, "validate_plan", return_value=([], {})), \
-                    patch.object(runner, "LiveMcp") as live, patch.object(sys, "argv", ["runner", "--execute"]):
+                    patch.object(runner, "LiveMcp") as live:
                 with self.assertRaisesRegex(RuntimeError, "holds the journal lock"):
-                    runner.main()
+                    runner.main(["--execute", "--manifest", str(Path(directory) / "manifest.json"),
+                                 "--journal", str(report), "--parent-refno", runner.PARENT,
+                                 "--root-name", runner.ROOT_NAME, "--world-position", "0", "0", "0",
+                                 "--expected-project", runner.EXPECTED_PROJECT, "--expected-mdb", runner.EXPECTED_MDB])
                 live.assert_not_called()
 
     def test_verify_subset_reports_partial_phase_and_keeps_global_created_history(self):
@@ -436,7 +442,7 @@ os._exit(0)
                 if tool == "e3d_status":
                     return {"ok": True, "connected": True, "session_id": "same", "state": {"database_ready": True}}
                 if tool == "e3d_project_info":
-                    return {"ok": True, "project": {"name": "APS", "mdb": "ALL", "current_element": "=1/0"}}
+                    return {"ok": True, "project": {"name": runner.EXPECTED_PROJECT, "mdb": runner.EXPECTED_MDB, "current_element": "=1/0"}}
                 if tool == "e3d_validate_model":
                     return {"ok": True, "validation": {"valid": True, "complete": True,
                         "checks_complete": True, "issues": [], "check_read_errors": []}}
@@ -458,6 +464,126 @@ os._exit(0)
             self.assertEqual(result["selection"]["active_confirmed_parts"], 1)
             self.assertEqual(len(result["created"]), 2)
             self.assertEqual(result["source_sha256"], {"old-source": "old", "new-source": "new"})
+
+
+class ExplicitExampleInputTests(unittest.TestCase):
+    def manifest(self, directory):
+        path = Path(directory) / "example-pump-base-plan.json"
+        path.write_text(json.dumps({"group": "base", "elements": [{
+            "key": "one", "type": "BOX", "position": [0, 0, 0],
+            "orientation": runner.IDENTITY, "attributes": {"XLEN": "10", "YLEN": "10", "ZLEN": "10"}}],
+            "panels": []}), encoding="utf-8")
+        return path
+
+    def live_arguments(self, manifest, journal):
+        return ["--execute", "--manifest", str(manifest), "--journal", str(journal),
+                "--parent-refno", "=2/30", "--root-name", "/EXPLICIT-EXAMPLE",
+                "--world-position", "1", "2", "3", "--expected-project", "TEST_PROJECT",
+                "--expected-mdb", "TEST_MDB"]
+
+    def test_default_is_an_unconfigured_offline_preview(self):
+        with patch.object(runner, "LiveMcp") as live, patch.object(runner, "RunnerLock") as lock, \
+                patch.object(runner, "validate_plan") as validate, redirect_stdout(StringIO()) as output:
+            self.assertEqual(runner.main([]), 0)
+        preview = json.loads(output.getvalue())
+        self.assertEqual(preview["mode"], "offline_preview")
+        self.assertFalse(preview["configured"])
+        self.assertFalse(preview["execution_attempted"])
+        self.assertEqual(preview["native_calls"], 0)
+        live.assert_not_called()
+        lock.assert_not_called()
+        validate.assert_not_called()
+
+    def test_manifest_preview_reads_only_explicit_local_input(self):
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = self.manifest(directory)
+            before = manifest.read_bytes()
+            with patch.object(runner, "LiveMcp") as live, patch.object(runner, "RunnerLock") as lock, \
+                    redirect_stdout(StringIO()) as output:
+                self.assertEqual(runner.main(["--manifest", str(manifest)]), 0)
+            preview = json.loads(output.getvalue())
+            self.assertEqual(preview["parts"], 1)
+            self.assertEqual(preview["native_calls"], 0)
+            self.assertFalse(preview["execution_attempted"])
+            self.assertEqual(manifest.read_bytes(), before)
+            self.assertEqual(list(Path(directory).iterdir()), [manifest])
+            live.assert_not_called()
+            lock.assert_not_called()
+
+    def test_live_modes_require_explicit_target_and_inputs_before_io(self):
+        for mode in ("--execute", "--verify-only"):
+            with self.subTest(mode=mode), patch.object(runner, "LiveMcp") as live, \
+                    patch.object(runner, "validate_plan") as validate, redirect_stderr(StringIO()):
+                with self.assertRaises(SystemExit) as failure:
+                    runner.main([mode])
+                self.assertEqual(failure.exception.code, 2)
+                live.assert_not_called()
+                validate.assert_not_called()
+
+    def test_explicit_target_reaches_runner_without_replacing_example_constants(self):
+        with tempfile.TemporaryDirectory() as directory:
+            manifest, journal = self.manifest(directory), Path(directory) / "journal.json"
+            with patch.object(runner, "run") as run, patch.object(runner, "LiveMcp") as live:
+                self.assertEqual(runner.main(self.live_arguments(manifest, journal)), 0)
+            arguments = run.call_args.args[0]
+            self.assertEqual(arguments.parent_refno, "=2/30")
+            self.assertEqual(arguments.root_name, "/EXPLICIT-EXAMPLE")
+            self.assertEqual(arguments.world_position, [1.0, 2.0, 3.0])
+            self.assertEqual((arguments.expected_project, arguments.expected_mdb), ("TEST_PROJECT", "TEST_MDB"))
+            self.assertEqual(arguments.journal, journal)
+            self.assertEqual((runner.PARENT, runner.ROOT_NAME, runner.WORLD_POSITION), ("=1/20", "/EXAMPLE-PUMP-001", [0, 0, 0]))
+            self.assertFalse(journal.exists())
+            live.assert_not_called()
+
+    def test_malformed_live_targets_reject_before_manifest_read(self):
+        for field, value in (("--parent-refno", " =2/30"), ("--parent-refno", "=02/30"),
+                             ("--parent-refno", "=2147483648/1"), ("--root-name", "/EXAMPLE;SAVEWORK"),
+                             ("--world-position", "nan")):
+            arguments = self.live_arguments("missing-manifest.json", "missing-journal.json")
+            arguments[arguments.index(field) + 1] = value
+            with self.subTest(field=field, value=value), patch.object(runner, "LiveMcp") as live, \
+                    patch.object(runner, "validate_plan") as validate, redirect_stderr(StringIO()):
+                with self.assertRaises(SystemExit) as failure:
+                    runner.main(arguments)
+                self.assertEqual(failure.exception.code, 2)
+                live.assert_not_called()
+                validate.assert_not_called()
+
+    def test_changed_explicit_target_does_not_adopt_an_existing_journal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            journal = Path(directory) / "journal.json"
+            journal.write_text(json.dumps({"root_name": "/ANOTHER-EXAMPLE"}), encoding="utf-8")
+            before = journal.read_bytes()
+            with patch.object(runner, "LiveMcp") as live:
+                with self.assertRaisesRegex(RuntimeError, "Journal target differs"):
+                    runner.run(SimpleNamespace(execute=False, build_only=False, journal=journal), [], {}, set(), set())
+                live.assert_not_called()
+            self.assertEqual(journal.read_bytes(), before)
+
+    def test_verifier_default_is_an_unconfigured_offline_preview(self):
+        with patch.object(verifier, "load_inputs") as load, patch.object(verifier, "run_live") as live, \
+                redirect_stdout(StringIO()) as output:
+            self.assertEqual(verifier.main([]), 0)
+        preview = json.loads(output.getvalue())
+        self.assertEqual(preview["mode"], "offline_preview")
+        self.assertEqual((preview["native_calls"], preview["artifact_writes"]), (0, 0))
+        load.assert_not_called()
+        live.assert_not_called()
+
+    def test_verifier_live_requires_explicit_context_before_local_inputs(self):
+        with patch.object(verifier, "load_inputs") as load, patch.object(verifier, "run_live") as live, \
+                redirect_stderr(StringIO()):
+            with self.assertRaises(SystemExit) as failure:
+                verifier.main(["--live"])
+            self.assertEqual(failure.exception.code, 2)
+            load.assert_not_called()
+            live.assert_not_called()
+
+    def test_verifier_read_allowlist_rejects_model_writes_without_dispatch(self):
+        client = Mock()
+        with self.assertRaises(RuntimeError):
+            verifier.Reader(client).read("e3d_create_panel", {})
+        client.call.assert_not_called()
 
 
 if __name__ == "__main__":

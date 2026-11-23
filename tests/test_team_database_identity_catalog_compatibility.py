@@ -15,7 +15,7 @@ from aveva_e3d_mcp.tools import create_server
 
 BASELINE = ROOT / "tests/fixtures/team_database_identity_catalog111.json"
 BASELINE_SHA256 = "d978cd04ad41be67dfbcc4618fd2dbc55ee02b939622f9153b8a76e8d55f92db"
-ADDED_TOOLS = {"e3d_team_database_identity_manifest", "e3d_paragon_generation_plan", "e3d_paragon_component_template"}
+ADDED_TOOLS = {"e3d_team_database_identity_manifest", "e3d_paragon_generation_plan", "e3d_paragon_component_template", "e3d_paragon_reference_trace"}
 
 
 class TeamDatabaseIdentityCatalogCompatibilityTests(unittest.TestCase):
@@ -28,9 +28,9 @@ class TeamDatabaseIdentityCatalogCompatibilityTests(unittest.TestCase):
         )["result"]["tools"]
 
         self.assertEqual(len(baseline), 111)
-        self.assertEqual(len(current), 114)
+        self.assertEqual(len(current), 115)
         self.assertEqual(len({tool["name"] for tool in baseline}), 111)
-        self.assertEqual(len({tool["name"] for tool in current}), 114)
+        self.assertEqual(len({tool["name"] for tool in current}), 115)
         old_by_name = {tool["name"]: tool for tool in baseline}
         current_by_name = {tool["name"]: tool for tool in current}
         self.assertEqual(set(current_by_name) - set(old_by_name), ADDED_TOOLS)

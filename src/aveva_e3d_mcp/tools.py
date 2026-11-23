@@ -563,6 +563,8 @@ def create_server(settings: Settings | None = None) -> McpServer:
     register_paragon_catalogue_schema(server, bridge)
     from .paragon_component_template import register_paragon_component_template
     register_paragon_component_template(server, bridge)
+    from .paragon_reference_trace import register_paragon_reference_trace
+    register_paragon_reference_trace(server, bridge)
     from .paragon_generation_plan import register_paragon_generation_plan
     register_paragon_generation_plan(server, bridge)
     from .piping_connectivity_snapshot import register_connectivity_snapshot

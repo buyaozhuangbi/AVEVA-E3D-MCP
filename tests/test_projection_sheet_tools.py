@@ -30,7 +30,7 @@ class ProjectionSheetToolTests(unittest.TestCase):
 
     def test_only_two_projection_tools_discover_optional_projection_method(self):
         tools = {row["name"]: row for row in self.fixture.rpc("tools/list", {})["tools"]}
-        self.assertEqual(len(tools), 114)
+        self.assertEqual(len(tools), 115)
         for name in ("e3d_project_element_drawing", "e3d_project_assembly_drawing"):
             prop = tools[name]["inputSchema"]["properties"]["sheet"]["properties"]["projection_method"]
             self.assertEqual(prop["enum"], ["first_angle", "third_angle"])
