@@ -45,7 +45,7 @@ class ConnectionPointsToolTests(unittest.TestCase):
 
     def test_discovery_exposes_one_read_only_tool_with_bounded_explicit_inputs(self):
         tools = {item["name"]: item for item in self.rpc("tools/list", {})["tools"]}
-        self.assertEqual(len(tools), 120)
+        self.assertEqual(len(tools), 122)
         self.assertEqual(sum("capture_after" in item["inputSchema"].get("properties", {})
                              for item in tools.values()), 19)
         tool = tools["e3d_connection_points"]

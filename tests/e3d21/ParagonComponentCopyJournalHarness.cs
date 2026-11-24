@@ -377,10 +377,50 @@ internal static class ParagonComponentCopyJournalHarness
         try
         {
             Validation(); CapabilitiesAndDedup(); ImmutabilityAndCriticalFacts(); OmissionAndPureJson();
-            Concurrency(); TimeoutCapacityAndExpiry(); Tombstones(); ParameterOperation();
+            Concurrency(); TimeoutCapacityAndExpiry(); Tombstones(); ParameterOperation(); CreationOperation();
             Console.WriteLine("PARAGON component copy journal production checks passed: " + assertions + "; pure managed, no SDK/PML, hostile serializers invoked=" + hostileWrites + ".");
             return 0;
         }
         catch (Exception error) { Console.Error.WriteLine(error); return 1; }
+    }
+
+    private static void CreationOperation()
+    {
+        var journal = new Journal(maxReceiptUtf8Bytes: 32, operation: Journal.CreateOperation);
+        var admitted = journal.Begin(Id(800), Digest());
+        Check(journal.TryStart(admitted.Token, out Journal.CallbackToken callback), "Create callback did not start.");
+        JObject running = Status(journal, 800);
+        var before = (JObject)running["critical_summary"];
+        Check((string)running["operation"] == Journal.CreateOperation && before.Properties().Count() == 17,
+            "Create status did not expose its own summary shape.");
+        Check(Null(before["creation_attempted"]) && Null(before["name_returned"]),
+            "Active create status inferred native execution.");
+        var source = new JObject
+        {
+            ["creation_attempted"] = true, ["creation_returned"] = true,
+            ["name_attempted"] = true, ["name_returned"] = true,
+            ["point_ref_attempted"] = true, ["point_ref_returned"] = false,
+            ["geometry_ref_attempted"] = false, ["geometry_ref_returned"] = false,
+            ["parameters_attempted"] = false, ["parameters_returned"] = false,
+            ["known_new_refno"] = "=2/99", ["known_new_refno_verified"] = true,
+            ["readback_complete"] = false, ["outcome_uncertain"] = true,
+            ["native_fault_latched"] = true, ["error_code"] = "native_database_fault",
+        };
+        var facts = Journal.CriticalSummary.From(source);
+        source["point_ref_returned"] = true;
+        Check(journal.CompleteStarted(callback, new JObject { ["payload"] = new string('x', 128) }, facts, 500),
+            "Create fault receipt could not complete.");
+        JObject completed = Status(journal, 800);
+        var summary = (JObject)completed["critical_summary"];
+        Check((string)completed["receipt_omitted_reason"] == "receipt_too_large",
+            "A large creation receipt did not retain its omission.");
+        Check((string)summary["known_new_refno"] == "=2/99" && (bool)summary["known_new_refno_verified"]
+            && (bool)summary["creation_returned"] && (bool)summary["name_returned"]
+            && (bool)summary["point_ref_attempted"] && !(bool)summary["point_ref_returned"]
+            && !(bool)summary["geometry_ref_attempted"] && !(bool)summary["parameters_attempted"]
+            && (bool)summary["native_fault_latched"] && !(bool)summary["retry_safe"],
+            "An omitted creation receipt lost or changed stage facts.");
+        Check(!journal.Begin(Id(800), Digest('b')).IsNew, "A failed create ID could be replayed.");
+        Console.WriteLine("Copy journal section passed: isolated creation facts survive full receipt omission");
     }
 }

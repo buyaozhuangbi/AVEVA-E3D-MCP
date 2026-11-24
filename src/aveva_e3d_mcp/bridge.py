@@ -180,6 +180,16 @@ def pml_script_request_id(value: Any) -> str:
     return str(uuid.UUID(value))
 
 
+_PARAGON_COMPONENT_WRITES = frozenset({
+    "/api/v1/paragon/component-copy",
+    "/api/v1/paragon/component-parameters",
+    "/api/v1/paragon/component-create",
+})
+_PARAGON_COMPONENT_PATHS = _PARAGON_COMPONENT_WRITES | {
+    path + "/status" for path in _PARAGON_COMPONENT_WRITES
+}
+
+
 _NATIVE_RESULT_DIAGNOSTIC_PATHS = frozenset({
     "/api/v1/element/create", "/api/v1/element/copy", "/api/v1/element/primitive",
     "/api/v1/panel/create", "/api/v1/panel/update", "/api/v1/element/transform",
@@ -187,8 +197,7 @@ _NATIVE_RESULT_DIAGNOSTIC_PATHS = frozenset({
     "/api/v1/view/set", "/api/v1/view/camera/set", "/api/v1/view/fit", "/api/v1/view/restore",
     "/api/v1/drawlist/visual", "/api/v1/drawlist/remove", "/api/v1/view/primitive-visual",
     "/api/v1/view/graphical-selection", "/api/v1/clash/check",
-    "/api/v1/paragon/component-copy", "/api/v1/paragon/component-parameters",
-})
+}) | _PARAGON_COMPONENT_WRITES
 
 
 _WRITE_ATTEMPT_FIELDS = {
@@ -204,6 +213,7 @@ _WRITE_ATTEMPT_FIELDS = {
     "/api/v1/pml-script": ("execution_attempted",),
     "/api/v1/paragon/component-copy": ("creation_attempted", "native_run_attempted"),
     "/api/v1/paragon/component-parameters": ("parameter_write_attempted",),
+    "/api/v1/paragon/component-create": ("creation_attempted",),
 }
 _ALWAYS_MUTATING_PATHS = frozenset({"/api/v1/view/fit", "/api/v1/view/restore"})
 _PML_WRITE_PATHS = frozenset({"/api/v1/command", "/api/v1/command-batch", "/api/v1/pml-script"})
@@ -235,7 +245,7 @@ def _uninformative_write_failure(method: str, path: str, payload: Any, value: di
         # Session/capacity rejections and duplicate submissions have bounded
         # execution metadata in the envelope, rather than a native result.
         receipts.append(value)
-    if path in {"/api/v1/paragon/component-copy", "/api/v1/paragon/component-parameters"}:
+    if path in _PARAGON_COMPONENT_WRITES:
         if isinstance(receipt, dict) and isinstance(receipt.get("progress"), dict):
             receipts.append(receipt["progress"])
         receipts.append(value)
@@ -247,7 +257,7 @@ def _uninformative_write_failure(method: str, path: str, payload: Any, value: di
             return receipt["outcome_uncertain"]
         if receipt.get("success") is True or receipt.get("dry_run") is True:
             return False
-        if path in {"/api/v1/pml-script", "/api/v1/paragon/component-copy", "/api/v1/paragon/component-parameters"} and receipt.get("this_submission_executed") is False:
+        if (path == "/api/v1/pml-script" or path in _PARAGON_COMPONENT_WRITES) and receipt.get("this_submission_executed") is False:
             return False
         if attempted_fields and all(receipt.get(field) is False for field in attempted_fields):
             return False
@@ -295,8 +305,7 @@ def _response_failure_diagnostics(path: str, value: dict[str, Any]) -> dict[str,
     diagnostics = {"state": value["state"]} if isinstance(value.get("state"), dict) else {}
     if path in _NATIVE_RESULT_DIAGNOSTIC_PATHS and isinstance(value.get("result"), dict):
         diagnostics["result"] = value["result"]
-    if path in {"/api/v1/paragon/component-copy", "/api/v1/paragon/component-copy/status",
-                "/api/v1/paragon/component-parameters", "/api/v1/paragon/component-parameters/status"}:
+    if path in _PARAGON_COMPONENT_PATHS:
         for key in ("version", "session_id", "bridge_build", "error_code"):
             if isinstance(value.get(key), str):
                 diagnostics[key] = value[key]
@@ -350,9 +359,7 @@ def _response_failure_diagnostics(path: str, value: dict[str, Any]) -> dict[str,
     if path in {"/health", "/api/v1/database/team-identity-manifest", "/api/v1/module/context",
                 "/api/v1/paragon/catalogue-manifest", "/api/v1/paragon/catalogue-schema",
                 "/api/v1/paragon/component-template", "/api/v1/paragon/reference-trace",
-                "/api/v1/paragon/component-copy", "/api/v1/paragon/component-copy/status",
-                "/api/v1/paragon/component-parameters", "/api/v1/paragon/component-parameters/status",
-                "/api/v1/piping/specification-read"}:
+                "/api/v1/piping/specification-read"} | _PARAGON_COMPONENT_PATHS:
         for key in ("version", "session_id", "bridge_build", "error_code"):
             if isinstance(value.get(key), str):
                 diagnostics[key] = value[key]
@@ -516,9 +523,7 @@ class BridgeClient:
                         "/api/v1/piping/specification-read", "/api/v1/database/team-identity-manifest",
                         "/api/v1/module/context", "/api/v1/paragon/catalogue-manifest",
                         "/api/v1/paragon/catalogue-schema", "/api/v1/paragon/component-template",
-                        "/api/v1/paragon/reference-trace", "/api/v1/paragon/component-copy",
-                        "/api/v1/paragon/component-copy/status", "/api/v1/paragon/component-parameters",
-                        "/api/v1/paragon/component-parameters/status"}:
+                        "/api/v1/paragon/reference-trace"} | _PARAGON_COMPONENT_PATHS:
             value.setdefault("version", selected_version)
         return value
 

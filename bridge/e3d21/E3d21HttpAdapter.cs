@@ -100,6 +100,10 @@ public sealed class E3d21HttpAdapter : IDisposable
         bool paragonComponentParametersStatusQuery = false;
         bool paragonComponentParametersDispatched = false;
         bool paragonComponentParametersDryRun = true;
+        bool paragonComponentCreateQuery = false;
+        bool paragonComponentCreateStatusQuery = false;
+        bool paragonComponentCreateDispatched = false;
+        bool paragonComponentCreateDryRun = true;
         bool projectCatalogProbe = false;
         try
         {
@@ -123,6 +127,8 @@ public sealed class E3d21HttpAdapter : IDisposable
             paragonComponentCopyStatusQuery = path == "/api/v1/paragon/component-copy/status";
             paragonComponentParametersQuery = path == "/api/v1/paragon/component-parameters";
             paragonComponentParametersStatusQuery = path == "/api/v1/paragon/component-parameters/status";
+            paragonComponentCreateQuery = path == "/api/v1/paragon/component-create";
+            paragonComponentCreateStatusQuery = path == "/api/v1/paragon/component-create/status";
             projectCatalogProbe = path == "/api/v1/database/project-catalog-probe";
             object response;
             if (method == "GET" && path == "/health")
@@ -151,6 +157,7 @@ public sealed class E3d21HttpAdapter : IDisposable
                         .Concat(context is IE3d21ParagonReferenceTraceContext ? new[] { "paragon_reference_trace" } : Array.Empty<string>())
                         .Concat(context is IE3d21ParagonComponentCopyContext ? new[] { "paragon_component_copy", "paragon_component_copy_status" } : Array.Empty<string>())
                         .Concat(context is IE3d21ParagonComponentParametersContext ? new[] { "paragon_component_parameters", "paragon_component_parameters_status" } : Array.Empty<string>())
+                        .Concat(context is IE3d21ParagonComponentCreateContext ? new[] { "paragon_component_create", "paragon_component_create_status" } : Array.Empty<string>())
                         .Concat(context is IE3d21PipeMemberManifestContext ? new[] { "pipe_member_manifest" } : Array.Empty<string>()).ToArray() };
             }
             else if (method == "GET" && path == "/api/v1/module/context")
@@ -314,6 +321,89 @@ public sealed class E3d21HttpAdapter : IDisposable
                 response = new { ok = true, version = "E3D21", session_id = sessionId,
                     bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
                     result = parametersContext.GetParagonComponentParametersStatus(requestId, expectedSessionId, sessionId) };
+            }
+            else if (method == "POST" && path == "/api/v1/paragon/component-create")
+            {
+                var createContext = context as IE3d21ParagonComponentCreateContext;
+                if (createContext == null)
+                {
+                    await WriteJsonAsync(request.Response, new { ok = false, version = "E3D21", session_id = sessionId,
+                        bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
+                        error = "PARAGON component creation is unavailable on this bridge." }, 404).ConfigureAwait(false);
+                    return;
+                }
+                if (request.Request.QueryString.Count != 0)
+                    throw new ArgumentException("PARAGON component creation accepts JSON parameters only.");
+                JObject body = await ReadUniqueBodyAsync(request.Request, 8192).ConfigureAwait(false);
+                var allowed = new HashSet<string>(StringComparer.Ordinal)
+                { "parent_refno", "point_refno", "geometry_refno", "name", "parameters", "parameter_bits", "dry_run", "request_id",
+                    "expected_session_id", "expected_bridge_build", "expected_revision" };
+                if (body.Properties().Any(property => !allowed.Contains(property.Name)))
+                    throw new ArgumentException("Unknown PARAGON component creation argument.");
+                paragonComponentCreateDryRun = ReadBoolean(body, "dry_run", true);
+                var executionKeys = new[] { "request_id", "expected_session_id", "expected_bridge_build", "expected_revision" };
+                if (paragonComponentCreateDryRun && executionKeys.Any(key => body.Property(key) != null))
+                    throw new ArgumentException("Preview does not accept execution identifiers or a revision.");
+                JArray bits = body["parameter_bits"] as JArray;
+                if (bits == null || bits.Count < 1 || bits.Count > ParagonComponentParametersRequest.MaximumParameters
+                    || bits.Any(value => value.Type != JTokenType.String))
+                    throw new ArgumentException("parameter_bits must be an array of 1 to 128 canonical binary64 hex strings.");
+                var update = ParagonComponentCreateRequest.ValidateWire(ReadString(body, "parent_refno", null),
+                    ReadString(body, "point_refno", null), ReadString(body, "geometry_refno", null), ReadString(body, "name", null),
+                    ReadParagonDoubleParameters(body), bits.Values<string>().ToList(), paragonComponentCreateDryRun,
+                    ReadString(body, "request_id", null), ReadString(body, "expected_session_id", null),
+                    ReadString(body, "expected_bridge_build", null), ReadString(body, "expected_revision", null));
+                paragonComponentCreateDispatched = true;
+                ParagonComponentCreateReply updated = createContext.CreateParagonComponent(update.ParentRefno, update.PointRefno,
+                    update.GeometryRefno, update.Name, update.Parameters, update.DryRun, update.RequestId, update.ExpectedSessionId,
+                    update.ExpectedBridgeBuild, update.ExpectedRevision, sessionId);
+                if (updated == null || updated.Result == null)
+                    throw new InvalidOperationException("The component creator did not return a native receipt.");
+                if (updated.Ok)
+                    await WriteJsonAsync(request.Response, new { ok = true, version = "E3D21", session_id = sessionId,
+                        bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
+                        result = updated.Result }, updated.HttpStatus).ConfigureAwait(false);
+                else if (updated.NativeFaultLatched)
+                    await WriteJsonAsync(request.Response, new { ok = false, version = "E3D21", session_id = sessionId,
+                        bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
+                        error_code = "native_database_fault", native_fault_latched = true, retry_safe = false,
+                        error = ParagonComponentCreateRequest.ErrorText(updated.Error), result = updated.Result }, updated.HttpStatus).ConfigureAwait(false);
+                else
+                    await WriteJsonAsync(request.Response, new { ok = false, version = "E3D21", session_id = sessionId,
+                        bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
+                        error = ParagonComponentCreateRequest.ErrorText(updated.Error), result = updated.Result }, updated.HttpStatus).ConfigureAwait(false);
+                return;
+            }
+            else if (method == "GET" && path == "/api/v1/paragon/component-create/status")
+            {
+                var createContext = context as IE3d21ParagonComponentCreateContext;
+                if (createContext == null)
+                {
+                    await WriteJsonAsync(request.Response, new { ok = false, version = "E3D21", session_id = sessionId,
+                        bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
+                        error = "PARAGON component creation status is unavailable on this bridge." }, 404).ConfigureAwait(false);
+                    return;
+                }
+                if (request.Request.HasEntityBody || request.Request.ContentLength64 != 0
+                    || !string.IsNullOrEmpty(request.Request.Headers["Transfer-Encoding"]))
+                    throw new ArgumentException("Component creation status does not accept a request body.");
+                var query = request.Request.QueryString;
+                foreach (string key in query.AllKeys)
+                    if ((key != "request_id" && key != "expected_session_id") || query.GetValues(key).Length != 1)
+                        throw new ArgumentException("Unknown or duplicate component creation status argument.");
+                string requestId = query["request_id"], expectedSessionId = query["expected_session_id"];
+                ParagonComponentCreateRequest.ValidateStatus(requestId, expectedSessionId);
+                if (expectedSessionId != sessionId)
+                {
+                    await WriteJsonAsync(request.Response, new { ok = false, version = "E3D21", session_id = sessionId,
+                        bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
+                        write_attempted = false, outcome_uncertain = false, retry_safe = false,
+                        error = "The expected bridge session changed; this status query did not inspect another session." }, 409).ConfigureAwait(false);
+                    return;
+                }
+                response = new { ok = true, version = "E3D21", session_id = sessionId,
+                    bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
+                    result = createContext.GetParagonComponentCreateStatus(requestId, expectedSessionId, sessionId) };
             }
             else if (method == "POST" && path == "/api/v1/paragon/component-copy")
             {
@@ -1447,6 +1537,14 @@ public sealed class E3d21HttpAdapter : IDisposable
                         error = paragonComponentParametersStatusQuery ? "Component parameter status requires GET." : "Component parameter updates require POST." }, 405).ConfigureAwait(false);
                     return;
                 }
+                if (paragonComponentCreateQuery || paragonComponentCreateStatusQuery)
+                {
+                    request.Response.AddHeader("Allow", paragonComponentCreateStatusQuery ? "GET" : "POST");
+                    await WriteJsonAsync(request.Response, new { ok = false, version = "E3D21", session_id = sessionId,
+                        bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
+                        error = paragonComponentCreateStatusQuery ? "Component creation status requires GET." : "Component creation requires POST." }, 405).ConfigureAwait(false);
+                    return;
+                }
                 if (paragonComponentCopyQuery || paragonComponentCopyStatusQuery)
                 {
                     request.Response.AddHeader("Allow", paragonComponentCopyStatusQuery ? "GET" : "POST");
@@ -1554,6 +1652,24 @@ public sealed class E3d21HttpAdapter : IDisposable
                 write_attempted = unknown ? (bool?)null : false, outcome_uncertain = unknown, retry_safe = false,
                 error = ex is JsonReaderException ? "Request body is not valid JSON." : ParagonComponentParametersRequest.ErrorText(ex.Message) },
                 !paragonComponentParametersDispatched && (ex is ArgumentException || ex is JsonException) ? 400 : 500).ConfigureAwait(false);
+        }
+        catch (NativeDatabaseFaultException ex) when (paragonComponentCreateQuery || paragonComponentCreateStatusQuery)
+        {
+            bool unknown = paragonComponentCreateDispatched && !paragonComponentCreateDryRun;
+            await WriteJsonAsync(request.Response, new { ok = false, version = "E3D21", session_id = sessionId,
+                bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
+                error_code = "native_database_fault", native_fault_latched = true,
+                write_attempted = unknown ? (bool?)null : false, outcome_uncertain = unknown, retry_safe = false,
+                error = ParagonComponentCreateRequest.ErrorText(ex.Message) }, 500).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (paragonComponentCreateQuery || paragonComponentCreateStatusQuery)
+        {
+            bool unknown = paragonComponentCreateDispatched && !paragonComponentCreateDryRun;
+            await WriteJsonAsync(request.Response, new { ok = false, version = "E3D21", session_id = sessionId,
+                bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
+                write_attempted = unknown ? (bool?)null : false, outcome_uncertain = unknown, retry_safe = false,
+                error = ex is JsonReaderException ? "Request body is not valid JSON." : ParagonComponentCreateRequest.ErrorText(ex.Message) },
+                !paragonComponentCreateDispatched && (ex is ArgumentException || ex is JsonException) ? 400 : 500).ConfigureAwait(false);
         }
         catch (NativeDatabaseFaultException ex) when (paragonComponentCopyQuery || paragonComponentCopyStatusQuery)
         {

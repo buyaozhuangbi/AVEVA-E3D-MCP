@@ -359,7 +359,7 @@ class DiagnosticReceiptToolTests(unittest.TestCase):
 
     def test_catalog_adds_history_lookup_and_opt_in_retention(self):
         catalog = {row["name"]: row for row in self.rpc("tools/list", {})["tools"]}
-        self.assertEqual(len(catalog), 120)
+        self.assertEqual(len(catalog), 122)
         retain = catalog["e3d_diagnose_element"]["inputSchema"]["properties"]["retain_receipt"]
         self.assertEqual(retain["type"], "boolean")
         self.assertIs(retain["default"], False)

@@ -570,6 +570,8 @@ def create_server(settings: Settings | None = None) -> McpServer:
     register_paragon_component_copy(server, bridge)
     from .paragon_component_parameters import register_paragon_component_parameters
     register_paragon_component_parameters(server, bridge)
+    from .paragon_component_create import register_paragon_component_create
+    register_paragon_component_create(server, bridge)
     from .paragon_standard_generation import register_paragon_standard_generation
     register_paragon_standard_generation(server, bridge)
     from .paragon_generation_plan import register_paragon_generation_plan

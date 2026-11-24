@@ -59,8 +59,7 @@ internal sealed class ParagonComponentCopyRequest
         RequireReference(sourceRefno, "source_refno");
         RequireReference(parentRefno, "parent_refno");
         if (sourceRefno == parentRefno) throw new ArgumentException("source_refno and parent_refno must differ.");
-        if (name == null || name.Length > MaximumNameLength || !LiteralName.IsMatch(name))
-            throw new ArgumentException("name must be an explicit ASCII /NAME of at most 50 characters with letter-led path segments.");
+        RequireName(name);
         if (recipe != RecipeName) throw new ArgumentException("Only same_category_scom_copy_v1 is supported.");
         if (dryRun)
         {
@@ -84,7 +83,13 @@ internal sealed class ParagonComponentCopyRequest
     internal static void ValidateStatus(string requestId, string expectedSessionId)
     { RequireUuid(requestId, "request_id"); RequireSession(expectedSessionId); }
 
-    private static void RequireReference(string value, string field)
+    internal static void RequireName(string name)
+    {
+        if (name == null || name.Length > MaximumNameLength || !LiteralName.IsMatch(name))
+            throw new ArgumentException("name must be an explicit ASCII /NAME of at most 50 characters with letter-led path segments.");
+    }
+
+    internal static void RequireReference(string value, string field)
     {
         Match match = NumericReference.Match(value ?? "");
         int database, element;

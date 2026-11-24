@@ -15,7 +15,7 @@ from aveva_e3d_mcp.tools import create_server
 
 BASELINE = ROOT / "tests/fixtures/paragon_generation_catalog112.json"
 BASELINE_SHA256 = "853476f36000ee7cc7a21875e4bb30cfd2bd26f2d5c25e5311cff65e3039aa8d"
-ADDED_TOOLS = {"e3d_paragon_generation_plan", "e3d_paragon_component_template", "e3d_paragon_reference_trace", "e3d_paragon_component_copy", "e3d_paragon_component_copy_status", "e3d_paragon_component_parameters_set", "e3d_paragon_component_parameters_status", "e3d_paragon_generate_from_standard"}
+ADDED_TOOLS = {"e3d_paragon_generation_plan", "e3d_paragon_component_template", "e3d_paragon_reference_trace", "e3d_paragon_component_copy", "e3d_paragon_component_copy_status", "e3d_paragon_component_parameters_set", "e3d_paragon_component_parameters_status", "e3d_paragon_generate_from_standard", "e3d_paragon_component_create", "e3d_paragon_component_create_status"}
 
 
 class ParagonGenerationCatalogCompatibilityTests(unittest.TestCase):
@@ -28,9 +28,9 @@ class ParagonGenerationCatalogCompatibilityTests(unittest.TestCase):
         )["result"]["tools"]
 
         self.assertEqual(len(baseline), 112)
-        self.assertEqual(len(current), 120)
+        self.assertEqual(len(current), 122)
         self.assertEqual(len({tool["name"] for tool in baseline}), 112)
-        self.assertEqual(len({tool["name"] for tool in current}), 120)
+        self.assertEqual(len({tool["name"] for tool in current}), 122)
         old_by_name = {tool["name"]: tool for tool in baseline}
         current_by_name = {tool["name"]: tool for tool in current}
         self.assertEqual(set(current_by_name) - set(old_by_name), ADDED_TOOLS)

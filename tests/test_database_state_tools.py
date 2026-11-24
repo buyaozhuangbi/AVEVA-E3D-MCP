@@ -23,7 +23,7 @@ class DatabaseStateToolsTests(unittest.TestCase):
 
     def test_schema_and_validation_are_bounded(self):
         tools = self.rpc("tools/list", {})["tools"]
-        self.assertEqual(len(tools), 120)
+        self.assertEqual(len(tools), 122)
         tool = next(item for item in tools if item["name"] == "e3d_database_state")
         self.assertTrue(tool["annotations"]["readOnlyHint"])
         self.assertFalse(tool["annotations"]["destructiveHint"])

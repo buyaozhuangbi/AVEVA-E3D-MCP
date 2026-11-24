@@ -47,7 +47,7 @@ class ConnectionPointsExpectedTypeTests(unittest.TestCase):
     def test_schema_adds_only_an_optional_type_selector(self):
         server = create_server(self.settings)
         tools = server._dispatch({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}})["result"]["tools"]
-        self.assertEqual(len(tools), 120)
+        self.assertEqual(len(tools), 122)
         tool = next(item for item in tools if item["name"] == "e3d_connection_points")
         self.assertEqual(tool["inputSchema"]["properties"]["expected_type"], CONNECTION_POINTS_EXPECTED_TYPE_SCHEMA)
         self.assertEqual(tool["inputSchema"]["required"], ["refno"])

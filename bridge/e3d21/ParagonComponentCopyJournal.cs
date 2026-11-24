@@ -17,6 +17,7 @@ internal sealed class ParagonComponentCopyJournal
 {
     internal const string Operation = "paragon_component_copy";
     internal const string ParametersOperation = "paragon_component_parameters_set";
+    internal const string CreateOperation = "paragon_component_create";
     internal const int MaximumRecords = 64;
     internal const int MaximumReceiptUtf8Bytes = 262144;
     internal const int MaximumRememberedIds = 65536;
@@ -63,6 +64,13 @@ internal sealed class ParagonComponentCopyJournal
         private readonly string knownTargetRefno;
         private readonly bool? knownTargetRefnoVerified, parameterWriteAttempted, parameterWriteReturned;
         private readonly bool? parametersEqualRequest, contextUnchanged, noChange;
+        private static readonly string[] CreateProgressKeys =
+        {
+            "creation_attempted", "creation_returned", "name_attempted", "name_returned",
+            "point_ref_attempted", "point_ref_returned", "geometry_ref_attempted", "geometry_ref_returned",
+            "parameters_attempted", "parameters_returned",
+        };
+        private Dictionary<string, bool?> createFacts;
 
         internal CriticalSummary(bool? creationAttempted = null, bool? nativeRunAttempted = null,
             string knownNewRefno = null, bool? outcomeUncertain = null,
@@ -96,7 +104,7 @@ internal sealed class ParagonComponentCopyJournal
         internal static CriticalSummary From(JObject facts)
         {
             if (ReferenceEquals(facts, null) || facts.GetType() != typeof(JObject)) return new CriticalSummary();
-            return new CriticalSummary(Boolean(facts["creation_attempted"]), Boolean(facts["native_run_attempted"]),
+            var summary = new CriticalSummary(Boolean(facts["creation_attempted"]), Boolean(facts["native_run_attempted"]),
                 Text(facts["known_new_refno"]), Boolean(facts["outcome_uncertain"]),
                 Boolean(facts["native_fault_latched"]), Text(facts["error_code"]),
                 Boolean(facts["native_run_returned"]), Boolean(facts["known_new_refno_verified"]),
@@ -105,6 +113,27 @@ internal sealed class ParagonComponentCopyJournal
                 Boolean(facts["known_target_refno_verified"]), Boolean(facts["parameter_write_attempted"]),
                 Boolean(facts["parameter_write_returned"]), Boolean(facts["parameters_equal_request"]),
                 Boolean(facts["context_unchanged"]), Boolean(facts["no_change"]));
+            if (facts.Property("creation_returned") != null)
+                summary.createFacts = CreateProgressKeys.ToDictionary(key => key, key => Boolean(facts[key]));
+            return summary;
+        }
+
+        internal Dictionary<string, object> Snapshot(string operation)
+        {
+            if (operation != CreateOperation) return Snapshot(operation == ParametersOperation);
+            var value = new Dictionary<string, object>
+            {
+                ["known_new_refno"] = knownNewRefno,
+                ["known_new_refno_verified"] = knownNewRefnoVerified,
+                ["readback_complete"] = readbackComplete,
+                ["outcome_uncertain"] = outcomeUncertain,
+                ["native_fault_latched"] = nativeFaultLatched,
+                ["error_code"] = errorCode,
+                ["retry_safe"] = false,
+            };
+            foreach (string key in CreateProgressKeys)
+                value[key] = createFacts?[key];
+            return value;
         }
 
         internal Dictionary<string, object> Snapshot(bool parameterOperation = false) => parameterOperation
@@ -163,7 +192,8 @@ internal sealed class ParagonComponentCopyJournal
         TimeSpan? retention = null, int maxReceiptUtf8Bytes = MaximumReceiptUtf8Bytes,
         int maxRememberedIds = MaximumRememberedIds, string operation = Operation)
     {
-        if (operation != Operation && operation != ParametersOperation) throw new ArgumentException("Unsupported journal operation.", "operation");
+        if (operation != Operation && operation != ParametersOperation && operation != CreateOperation)
+            throw new ArgumentException("Unsupported journal operation.", "operation");
         if (capacity < 1 || capacity > MaximumRecords) throw new ArgumentOutOfRangeException("capacity");
         if (maxReceiptUtf8Bytes < 1 || maxReceiptUtf8Bytes > MaximumReceiptUtf8Bytes) throw new ArgumentOutOfRangeException("maxReceiptUtf8Bytes");
         if (maxRememberedIds < 1 || maxRememberedIds > MaximumRememberedIds) throw new ArgumentOutOfRangeException("maxRememberedIds");
@@ -300,7 +330,7 @@ internal sealed class ParagonComponentCopyJournal
             ["accepted_utc"] = Time(entry.AcceptedUtc), ["started_utc"] = Time(entry.StartedUtc), ["completed_utc"] = Time(entry.CompletedUtc),
             ["completion_pending"] = entry.CompletionClaimed && !completed, ["http_status"] = entry.HttpStatus,
             ["receipt_available"] = entry.ReceiptJson != null, ["receipt_omitted_reason"] = completed ? entry.OmittedReason : "not_completed",
-            ["receipt"] = receipt, ["critical_summary"] = entry.Summary.Snapshot(operation == ParametersOperation), ["retry_safe"] = false,
+            ["receipt"] = receipt, ["critical_summary"] = entry.Summary.Snapshot(operation), ["retry_safe"] = false,
             ["store_policy"] = Policy(), ["scope"] = Scope
         };
     }
@@ -311,7 +341,7 @@ internal sealed class ParagonComponentCopyJournal
         ["request_id"] = id.ToString("D"), ["request_fingerprint"] = null, ["request_id_reserved"] = seenIds.Contains(id),
         ["accepted_utc"] = null, ["started_utc"] = null, ["completed_utc"] = null, ["completion_pending"] = false,
         ["http_status"] = null, ["receipt_available"] = false, ["receipt_omitted_reason"] = "unknown_or_expired", ["receipt"] = null,
-        ["critical_summary"] = new CriticalSummary().Snapshot(operation == ParametersOperation), ["retry_safe"] = false, ["store_policy"] = Policy(), ["scope"] = Scope
+        ["critical_summary"] = new CriticalSummary().Snapshot(operation), ["retry_safe"] = false, ["store_policy"] = Policy(), ["scope"] = Scope
     };
 
     private const string Scope = "Session-local managed callback ownership only; accepted is not running, running does not prove native execution, and completed records a final receipt rather than native success. Unknown/expired does not prove no execution. No replay, durability, cross-session exactly-once, or SDK/UI ownership guarantee.";

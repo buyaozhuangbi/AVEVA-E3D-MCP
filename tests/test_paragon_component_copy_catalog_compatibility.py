@@ -26,12 +26,12 @@ class ParagonComponentCopyCatalogCompatibilityTests(unittest.TestCase):
             "jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {},
         })["result"]["tools"]
         self.assertEqual(len(baseline), 115)
-        self.assertEqual(len(current), 120)
+        self.assertEqual(len(current), 122)
         before = {tool["name"]: tool for tool in baseline}
         after = {tool["name"]: tool for tool in current}
         self.assertEqual(len(before), 115)
-        self.assertEqual(len(after), 120)
-        self.assertEqual(set(after) - set(before), {"e3d_paragon_component_copy", "e3d_paragon_component_copy_status", "e3d_paragon_component_parameters_set", "e3d_paragon_component_parameters_status", "e3d_paragon_generate_from_standard"})
+        self.assertEqual(len(after), 122)
+        self.assertEqual(set(after) - set(before), {"e3d_paragon_component_copy", "e3d_paragon_component_copy_status", "e3d_paragon_component_parameters_set", "e3d_paragon_component_parameters_status", "e3d_paragon_generate_from_standard", "e3d_paragon_component_create", "e3d_paragon_component_create_status"})
         self.assertEqual(set(before) - set(after), set())
         for name, definition in before.items():
             with self.subTest(tool=name):

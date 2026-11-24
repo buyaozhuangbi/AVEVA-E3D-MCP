@@ -26,6 +26,7 @@ SECTIONS = (
     "running timeout, active capacity, completion expiry and eviction",
     "full 65536-ID session tombstone boundary",
     "isolated parameter facts survive full receipt omission",
+    "isolated creation facts survive full receipt omission",
 )
 
 
