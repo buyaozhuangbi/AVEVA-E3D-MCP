@@ -6,16 +6,94 @@
 
 ## 能力概览
 
-| 领域 | 主要能力 |
-| --- | --- |
-| 工程与诊断 | 检查会话、项目、MDB 和当前元素，读取模型层级、属性、Schema 与数据库状态。 |
-| 设备与管道 | 检查设备和管道成员、实际连接点、规格与连接关系，生成只读建模计划或排查证据。 |
-| PARAGON 目录 | 读取 Catalogue 结构、Schema 和 SCOM 模板，支持同 CATE 模板复制、使用现有点集与型集直接建模、按规范生成和 PARAM 更新。 |
-| 数据库准备 | 检查当前 MDB 的库名和 DBNO 冲突，提供 CATA 建库字段和建库后核验步骤。数据库由用户在 ADMIN 中创建并加入目标 MDB。 |
-| 几何与图纸 | 查询尺寸、空间关系和体积，生成网格、剖面、设备布置图及 PNG、SVG 或 DXF。 |
-| 模型编辑与调试 | 创建、复制和修改受支持的原生元素，读取或调整显示状态，执行 PML 命令与脚本。 |
+服务把 Python MCP、E3D 进程内的 .NET Addin 和 E3D SDK 连接起来。Mock 模式可用于发现工具与离线开发。E3D 2.1 bridge 模式提供受支持的原生读取和写入。工具定义会随 Addin 的 `api_features`、当前运行模式和配置而变化，客户端可用 `tools/list` 查看可调用工具。
 
-PARAGON 写入工具需要支持对应接口的 Addin。先预览并检查回执，再使用预览返回的会话、构建和修订信息显式执行。离线合同测试覆盖接口和回读逻辑，工程结果需在目标 E3D 会话中验收。
+### 插件开发与调试
+
+仓库包括 Python MCP 服务、E3D 2.1 .NET Framework 4.8 Addin/HTTP adapter，以及一个只读 PML 调试面板。Python 服务通过 stdio 接入 MCP 客户端，Addin 在 E3D 进程中把 SDK 工作派发到 UI 线程，并通过仅监听 `127.0.0.1` 的本机 HTTP bridge 返回结果。调试时可以从连接和 session/build 身份开始，查看 adapter 日志、E3D 消息、命令状态与 PML 输出，再检查单个元素的结构化诊断证据。
+
+- **构建与加载**：使用本机 E3D SDK 构建 `bridge/e3d21/E3d21HttpAdapter.csproj`，再按 E3D 安装流程注册并加载 Addin。构建不会自动部署或加载插件。[E3D 连接步骤](#连接-e3d-21)
+- **运行状态**：`e3d_status`、`e3d_context_snapshot`、`e3d_project_info`、`e3d_module_context` 检查版本、bridge、session、project、MDB、模块和 CE。
+- **日志与消息**：`e3d_read_logs`、`e3d_read_messages`、`e3d_read_message_window` 读取 adapter 诊断、Addin 捕获的 E3D 消息及会话内有界输出窗口。
+- **PML 调试**：`e3d_execute_pml` 处理单条命令，`e3d_execute_pml_batch` 按顺序执行命令，`e3d_execute_pml_script` 处理完整宏和 IF/DO 脚本。`dry_run` 检查输入和编码，不解析 PML 语法。用 `e3d_pml_script_status` 查询同一会话的原请求回执。
+- **命令恢复**：`e3d_command_state` 查看运行或等待状态，`e3d_cancel_command` 请求取消挂起命令，`e3d_reenter_design` 在成功 SAVEWORK 后重新进入 DESIGN 并确认新 session。
+- **PML 面板**：`pml/e3d21/CodexAiDebug/` 中的 `!!codexAiDebug` 面板显示当前元素的类型、名称和引用。[面板安装说明](pml/e3d21/CodexAiDebug/README.md)
+- **离线验证**：`tests/` 包含 Python 行为测试及托管 C# HTTP/native harness，可在没有运行中 E3D 的情况下验证输入合同、响应、故障路径和模拟 SDK 调用。
+
+真实 PML 执行需要将 `E3D_MCP_ALLOW_COMMANDS` 显式设为 `true`。超时或断连可能无法确认脚本是否已运行，应查询原 request ID；服务不会自动重放不确定的写入。网络层、Addin 加载状态、目标 E3D 版本和 `api_features` 都会影响现场可用性。
+
+### 模型数据、工程上下文与 Schema
+
+读取工具围绕明确的 REF、根节点或请求范围工作，返回原生类型、上下文边界、读取错误及截断情况。范围不足或 SDK 读取失败时保留未知状态，不能把未知当作不存在。
+
+- **层级与搜索**：`e3d_query`、`e3d_element_snapshot`、`e3d_list_members`、`e3d_find_descendants` 查询引用、读取树形结构、分页浏览直接成员或在明确根下搜索。
+- **属性与类型**：`e3d_read_attributes` 和 `e3d_read_attributes_batch` 读取格式化与类型化属性。`e3d_element_schema`、`e3d_validate_model` 检查合法子类型、属性元数据和已发布的尺寸规则。`e3d_element_access` 读取当前 session 和指定目标的访问、锁及 claim 观察。
+- **数据库身份**：`e3d_database_state`、`e3d_database_identity_snapshot` 读取当前 MDB 的数据库和身份清单。`e3d_team_database_identity_manifest` 观察 TEAM、DBLI、DB 及其类型化 owner 关系。`e3d_database_preflight` 对 DESI/CATA 生成非执行候选并检查当前 MDB 的名称和 DBNO 冲突。CATA 的 ADMIN 交接与核验见[建库说明](docs/paragon-database-creation.md)。
+- **设备和管道清单**：`e3d_equipment_manifest` 读取 EQUI 下有界成员树，`e3d_pipe_member_manifest` 读取 PIPE/BRAN 成员，`e3d_piping_branch_state` 读取 BRAN 属性、规格、服务信息和直接成员。
+- **空间和批量测量**：`e3d_spatial_info` 与 `e3d_transform_coordinates` 在明确坐标系下读取或转换坐标。`e3d_measure_elements_batch` 批量读取空间位置、原生 bounds 和体积。`e3d_database_state` 的完整性仅指当前 MDB 观察范围，不代表项目范围内完整目录。
+
+### 设备建模
+
+设备能力覆盖现有模型读取、属性与 Schema 探查、建模计划、受支持元素创建/复制/变换，以及设备位置图和选定几何轮廓图。
+
+1. 用 `e3d_equipment_manifest` 读取明确的 EQUI 和有界成员树，查看父子索引、成员顺序、类型、属性及截断原因。
+2. 用 `e3d_equipment_child_schema` 检查目标父级的当前 `IsCreatable` 观察、元素类型元数据，以及可选的现有同类型 exemplar 属性。它是只读 SDK 证据，不代表权限或新实例属性已验证。
+3. 用 `e3d_equipment_model_plan` 对 EQUI 下最多 16 个明确的 create、copy、transform 步骤形成只读计划。计划提供父路径、Schema、姿态转换和约束观察，不调用任何写入预览。
+4. 对计划中的具体步骤，使用 `e3d_create_element` 创建支持的子元素，`e3d_copy_element` 复制支持的几何树，`e3d_set_transform` 设置位置或姿态。写操作先预览，再按各工具要求提交 revision，随后检查原生回读和残留状态。
+5. 用 `e3d_equipment_layout_drawing` 或 `e3d_equipment_layout_sheet` 检查明确列出的 EQUI 姿态和位置。需要所选模型几何轮廓时，可用 `e3d_equipment_outline_sheet` 或 `e3d_equipment_layout_tiles`，并显式提供来源几何。
+
+设备工具不会自动遍历工程并猜测所有部件，也不会从位置符号推导设备外形。model plan 是建议步骤，设备图纸通常基于显式选择的来源几何。完整工程树、UDET 设计规则、工程适用性和实机显示效果仍需在目标项目核对。
+
+### 管道设计与连接检查
+
+- `e3d_piping_branch_state`、`e3d_pipe_member_manifest` 读取 BRAN/PIPE 结构和有序成员。
+- `e3d_connection_points` 读取明确元素的 PPLS/PPOS/PDIR 等原生连接点，`e3d_check_connection_pair` 对一对显式 P-point 进行 SDK 位置和方向观察。
+- `e3d_piping_connectivity_snapshot` 在一次 UI 回调中组合有界 BRAN 状态、P-point 配对及有向 PCREF 追踪。`e3d_trace_piping_connectivity` 对显式起点读取 directed PCREF 链。
+- `e3d_piping_specification_read` 读取规格引用的原生格式化/类型化字段，`e3d_piping_route_plan` 组合成员、BRAN、连接点和 Schema 证据，输出只读顺序建议。
+
+连接点相近不等于工程连接兼容，Schema 和规划结果也不会自动落成管道。`e3d_spatial_map_status` 当前暂停 native CheckSpatialMap，`e3d_native_clash_check` 暂停原生 clash 执行。不要把这两项状态当成已通过碰撞检查。
+
+### PARAGON 元件与 Catalogue
+
+- **目录读取**：`e3d_paragon_catalogue_manifest` 浏览显式 Catalogue 根的有界成员树，`e3d_paragon_catalogue_schema` 观察当前父级原生 child type 和属性 Schema，`e3d_paragon_component_template` 读取现有 SCOM 的身份、数值 PARAM 和有限引用集。
+- **新建 SCOM**：`e3d_paragon_component_create` 在现有 CATE 下引用现有 PTSE 点集和 GMSE 型集，写入完整数值 PARAM 数组。执行后读取新 REF、归属、`PTREF`、`GMREF` 和参数。状态由 `e3d_paragon_component_create_status` 查询。[直接新建说明](docs/paragon-component-create.md)
+- **模板复制**：`e3d_paragon_component_copy` 在同一 CATE 下复制显式 SCOM 模板并读回规定身份和数据。`e3d_paragon_component_copy_status` 查询原请求状态。[复制工作流](docs/paragon-component-generation.md)
+- **按规范生成**：`e3d_paragon_generate_from_standard` 支持 E3D 内置 SPEC/SPCO/CATREF 链路和外部标准到 PARAM 的明确映射。`e3d_paragon_generation_plan` 生成只读复核草稿。[规范生成说明](docs/paragon-standard-generation.md)
+- **参数更新**：`e3d_paragon_component_parameters_set` 对已存在的 SCOM 预览并更新完整数值 PARAM 数组，执行后按类型化数值回读。`e3d_paragon_component_parameters_status` 查询其账本。[PARAM 说明](docs/paragon-component-parameters.md)
+- **引用追踪**：`e3d_paragon_reference_trace` 沿显式 Design、Catalogue 和 Property DBREF 路径读取类型化身份及引用证据。[追踪说明](docs/paragon-reference-trace.md)
+
+写入工具需要目标 Addin 暴露相应 feature，并要求显式预览和对应 session、build、revision、request ID。复用点集/型集不代表已验证点位求值、型集几何生成、单位或工程适用性。数据库和访问配置由用户在 ADMIN 管理，MCP 的 CATA 建库流程只准备 ADMIN 字段并指导建库后核验。
+
+### 原生几何编辑与测量
+
+- **元素操作**：`e3d_create_element`、`e3d_copy_element`、`e3d_delete_element` 创建、复制或删除支持的明确元素。`e3d_set_attribute` 和 `e3d_set_attributes` 更新受限属性，`e3d_set_transform` 改变明确对象的位姿。
+- **板件**：`e3d_panel_geometry` 读取 PANE/PLOO/PAVE，`e3d_panel_curve_boundary` 推导边界曲线，`e3d_panel_loop_relations` 检查环之间关系，`e3d_create_panel` 创建 PANE，`e3d_update_panel` 更新顶点，`e3d_panel_mesh` 推导参数网格。
+- **实体与 CSG**：`e3d_primitive_geometry`、`e3d_generated_csg` 读取原生几何及生成 CSG 描述。`e3d_update_primitive` 在支持类型上预览和更新参数化尺寸/位姿。`e3d_geometry_bounds` 读取原生 bounds，`e3d_geometry_volume` 读取原生 gross/net volume。
+- **几何关系**：`e3d_geometry_relation`、`e3d_geometry_relation_batch` 读取 E3D 空间谓词，`e3d_geometry_overlap_candidates` 用 bounds 生成宽阶段重叠候选。它们返回原生结果或候选，不提供工程 clearance 结论。
+- **网格工具**：`e3d_primitive_mesh`、`e3d_element_mesh`、`e3d_primitive_csg_mesh` 从支持元素参数推导三角网格。`e3d_measure_triangle_mesh`、`e3d_validate_triangle_mesh` 检查调用方提供的网格。网格是参数化近似，不是 E3D tessellation 或模型写入。
+- **比较与检查**：`e3d_compare_element_meshes` 比较两份参数网格。`e3d_validate_model` 检查已发布的类型和尺寸规则。`e3d_native_clash_check` 当前处于暂停状态。
+
+### 图纸、布置与视图
+
+工具可返回结构化线段/来源证据、PNG 预览和按接口支持的 SVG/DXF。
+
+- **通用投影和剖面**：`e3d_project_element_drawing`、`e3d_project_assembly_drawing`、`e3d_section_element_drawing`、`e3d_section_assembly_drawing` 从显式的支持类型推导投影或截面。`e3d_compose_drawing_sheet` 组合对齐视图，`e3d_compose_drawing_atlas` 创建多页图册。
+- **板件边界图**：`e3d_project_panel_boundary_drawing`、`e3d_project_panel_assembly_boundary_drawing` 投影板件控制点环。`e3d_project_panel_curve_drawing`、`e3d_project_panel_curve_assembly_drawing` 输出线段/圆弧边界。
+- **实体和材料图**：`e3d_project_primitive_csg_drawing` 投影受支持的实体与负几何参数差。`e3d_project_material_assembly_drawing`、`e3d_project_material_assembly_sheet`、`e3d_project_material_assembly_tiles` 联合投影明确选择的材料来源或分幅。
+- **设备位置和外形**：`e3d_equipment_layout_drawing` 绘制设备原点与姿态轴，`e3d_equipment_layout_sheet` 输出位置表，`e3d_equipment_outline_sheet` 投影指定设备下的选定来源，`e3d_equipment_layout_tiles` 输出固定比例分幅。
+- **喷嘴方向**：`e3d_nozzle_orientation_drawing`、`e3d_nozzle_datum_sheet`、`e3d_nozzle_axis_sheet` 依据显式 PPOS/PDIR 绘制方向和坐标差。`e3d_nozzle_outline_sheet` 在选定设备局部轴中组合喷嘴点与指定轮廓几何。
+- **原生视图**：`e3d_view_state`、`e3d_view_clipping_state`、`e3d_observe_view` 读取相机、裁剪和跨回调视图观察。`e3d_capture_view` 返回当前视图图像，`e3d_set_view`、`e3d_set_camera` 设置相机，`e3d_fit_view` 适配当前 Drawlist，`e3d_restore_view` 显式恢复观察到的视图。
+- **Drawlist 与选择**：`e3d_drawlist_snapshot`、`e3d_display_snapshot`、`e3d_display_state` 读取显示成员和状态。`e3d_set_drawlist_visual`、`e3d_set_primitive_visual` 更新已有显示项，`e3d_remove_drawlist_member` 移除显示成员。`e3d_graphical_selection` 读取图形选择，`e3d_set_graphical_selection` 预览并替换选择集。
+
+派生图纸不创建 E3D Draft 元素，也不修改工程模型。参数网格、native bounds 的坐标框架、Boolean 语义、截面孔洞角色及图纸工程用途按工具合同保留其限制。
+
+### 诊断与操作回执
+
+`e3d_diagnose_element` 为一个明确元素组合有界快照、Schema、几何、显示和视图证据，可选保留完整诊断回执和 PNG。`e3d_diagnostic_receipt` 读取原回执，`e3d_compare_diagnostic_receipts` 比较两份已保留证据。它们用于检查差异和读取覆盖范围，不自动判断原因、时间顺序或工程影响。
+
+### 写入通用流程
+
+适用的元素、几何和 PARAGON 写入工具采用各自的 dry-run 预览、显式执行和原生读回。调用者应检查工具是否可用、输入目标、预览修订、执行回执及失败后的 residual state。写操作不是跨 API 事务。服务不会仅因超时或回读失败就自动重试、删除对象、保存工程或恢复 CE。默认保持 `E3D_MCP_ALLOW_COMMANDS=false`，只在明确需要时开启。
 
 ## 版本更新
 
