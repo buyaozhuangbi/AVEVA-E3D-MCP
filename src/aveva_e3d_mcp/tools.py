@@ -9,6 +9,7 @@ import urllib.parse
 from pathlib import Path
 from typing import Any
 
+from . import __version__
 from .bridge import BridgeClient, BridgeError, PML_SCRIPT_MAX_BYTES, element_access_refnos, graphical_selection_parameters, native_clash_parameters, normalize_expected_element_type, pml_script_request_id, pml_script_utf8, spatial_map_status_parameters
 from .config import Settings
 from .context_snapshot import context_snapshot
@@ -390,7 +391,7 @@ def create_server(settings: Settings | None = None) -> McpServer:
     settings = settings or Settings.from_env()
     bridge = BridgeClient(settings)
     receipt_store = DiagnosticReceiptStore(settings.version or settings.default_version)
-    server = McpServer("aveva-e3d-mcp", "0.1.0", instructions=(
+    server = McpServer("aveva-e3d-mcp", __version__, instructions=(
         f"This MCP instance serves only {settings.version or settings.default_version} in {settings.mode} mode. "
         f"Command execution is {'enabled' if settings.allow_commands else 'disabled'}. "
         "Read the e3d://<version>/status and e3d://<version>/project resources for the current connection and project snapshot, or use e3d_status and e3d_project_info tools. "
@@ -569,6 +570,8 @@ def create_server(settings: Settings | None = None) -> McpServer:
     register_paragon_component_copy(server, bridge)
     from .paragon_component_parameters import register_paragon_component_parameters
     register_paragon_component_parameters(server, bridge)
+    from .paragon_standard_generation import register_paragon_standard_generation
+    register_paragon_standard_generation(server, bridge)
     from .paragon_generation_plan import register_paragon_generation_plan
     register_paragon_generation_plan(server, bridge)
     from .piping_connectivity_snapshot import register_connectivity_snapshot

@@ -400,11 +400,11 @@ class DatabasePreflightToolTests(unittest.TestCase):
         server = create_server(Settings(mode="mock", version="E3D21"))
         current = server._dispatch({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}})["result"]["tools"]
         baseline = json.loads((ROOT / "tests/fixtures/database_preflight_catalog98.json").read_text(encoding="utf-8"))
-        self.assertEqual(len(current), 119)
+        self.assertEqual(len(current), 120)
         current_by_name = {row["name"]: row for row in current}
         self.assertEqual(set(current_by_name) - {row["name"] for row in baseline}, {
             TOOL, "e3d_database_identity_snapshot", "e3d_piping_branch_state", "e3d_equipment_manifest",
-            "e3d_pipe_member_manifest", "e3d_equipment_model_plan", "e3d_piping_route_plan", "e3d_paragon_catalogue_manifest", "e3d_module_context", "e3d_paragon_catalogue_schema", "e3d_piping_connectivity_snapshot", "e3d_equipment_child_schema", "e3d_piping_specification_read", "e3d_team_database_identity_manifest", "e3d_paragon_generation_plan", "e3d_paragon_component_template", "e3d_paragon_reference_trace", "e3d_paragon_component_copy", "e3d_paragon_component_copy_status", "e3d_paragon_component_parameters_set", "e3d_paragon_component_parameters_status",
+            "e3d_pipe_member_manifest", "e3d_equipment_model_plan", "e3d_piping_route_plan", "e3d_paragon_catalogue_manifest", "e3d_module_context", "e3d_paragon_catalogue_schema", "e3d_piping_connectivity_snapshot", "e3d_equipment_child_schema", "e3d_piping_specification_read", "e3d_team_database_identity_manifest", "e3d_paragon_generation_plan", "e3d_paragon_component_template", "e3d_paragon_reference_trace", "e3d_paragon_component_copy", "e3d_paragon_component_copy_status", "e3d_paragon_component_parameters_set", "e3d_paragon_component_parameters_status", "e3d_paragon_generate_from_standard",
         })
         for historical in baseline:
             assert_legacy_tool_definition(self, current_by_name[historical["name"]], historical)

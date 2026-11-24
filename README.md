@@ -2,7 +2,7 @@
 
 面向 AVEVA Everything3D（E3D）的模型开发与调试 MCP 服务。Python MCP server 通过标准输入/输出（stdio）连接 Codex、Claude Desktop、Cursor 等客户端；需要读取真实 E3D 状态时，再由 E3D 进程内的 .NET Addin 提供本机 HTTP bridge。
 
-当前 MCP catalog 注册 **119 个工具**。`tools/list` 返回的工具定义和可选功能是当前实例能力的权威来源；实际能力受 E3D 版本、加载的 Addin 和配置影响。Python distribution metadata 当前版本为 `0.1.0`（见 `pyproject.toml`）；它不是 E3D Addin build 版本。
+当前版本为 **0.2.0**，共注册 **120 个 MCP 工具**。`tools/list` 显示当前实例的工具定义，运行能力取决于 E3D 版本、加载的 Addin 和配置。
 
 ## 能力概览
 
@@ -17,6 +17,8 @@ PARAGON 的 Catalogue 数据库由用户在 E3D ADMIN 中配置。`e3d_paragon_g
 `e3d_paragon_component_copy_status` 可在超时或故障后只读查询原请求账本，禁止自动重试。该能力的离线合同测试不代替隔离 Catalogue 实机验收，也不证明完整几何或工程等价。输入、执行步骤、回读范围及失败处理见[PARAGON 元件生成说明](docs/paragon-component-generation.md)。
 
 生成后可用 `e3d_paragon_component_parameters_set` 对明确 REF 的 Catalogue SCOM 预览、写入和独立回读完整 PARAM 数组，支持 1–128 个有限 DOUBLE 值且保持原数组长度。`e3d_paragon_component_parameters_status` 查询该参数请求的独立账本。复制和参数写入是两个独立操作；参数步骤失败不会自动重建或删除元件。示例、单位边界和负零传输规则见[PARAGON 参数化说明](docs/paragon-component-parameters.md)。
+
+`e3d_paragon_generate_from_standard` 提供两条生成路径。E3D 内置规范根据指定 `SPEC`、`SPCO` 和实际 `CATREF` 找到模板。外部规范根据用户核对的标准编号、版次、条款或表格位置及尺寸到 `PARAM` 的映射，复制模板并写入参数。两条路径都先返回预览，执行回执记录新 REF 和各阶段结果。[按规范生成元件](docs/paragon-standard-generation.md)
 
 ### 管道与目录引用链
 

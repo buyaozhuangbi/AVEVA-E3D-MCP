@@ -32,7 +32,7 @@ class ClippingDiagnosisRegistrationTests(unittest.TestCase):
 
     def test_discovery_exposes_opt_in_without_new_tool_or_write_permission(self):
         catalog = self.rpc("tools/list", {})["tools"]
-        self.assertEqual(len(catalog), 119)
+        self.assertEqual(len(catalog), 120)
         tool = next(row for row in catalog if row["name"] == "e3d_diagnose_element")
         self.assertTrue(tool["annotations"]["readOnlyHint"])
         field = tool["inputSchema"]["properties"]["include_clipping"]

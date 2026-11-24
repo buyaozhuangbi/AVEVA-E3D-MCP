@@ -32,7 +32,7 @@ class PrimitiveMeshToolTests(unittest.TestCase):
 
     def test_tool_is_read_only_explicit_bounded_and_discoverable(self) -> None:
         tools = {row["name"]: row for row in self._rpc("tools/list", {})["tools"]}
-        self.assertEqual(len(tools), 119)
+        self.assertEqual(len(tools), 120)
         tool = tools["e3d_primitive_mesh"]
         self.assertTrue(tool["annotations"]["readOnlyHint"])
         self.assertTrue(tool["annotations"]["idempotentHint"])
