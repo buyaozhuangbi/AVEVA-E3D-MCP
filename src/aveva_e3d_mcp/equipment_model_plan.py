@@ -12,6 +12,7 @@ from .config import Settings
 from .context_snapshot import context_snapshot
 from .equipment_child_schema import equipment_child_schema, _native_fault as _child_schema_native_fault
 from .equipment_manifest import equipment_manifest
+from .model_plan_preview import model_edit_preview
 from .protocol import McpServer
 
 
@@ -52,8 +53,11 @@ def _vector(value: Any, field: str) -> list[float] | None:
 
 
 def _parameters(args: dict[str, Any]) -> dict[str, Any]:
-    if set(args) - {"equipment_refno", "steps", "max_depth", "limit"}:
-        raise ValueError("Only equipment_refno, steps, max_depth and limit are accepted")
+    if set(args) - {"equipment_refno", "steps", "max_depth", "limit", "include_native_previews"}:
+        raise ValueError("Only equipment_refno, steps, max_depth, limit and include_native_previews are accepted")
+    include_native_previews = args.get("include_native_previews", False)
+    if type(include_native_previews) is not bool:
+        raise ValueError("include_native_previews must be a boolean")
     equipment_refno = _ref(args.get("equipment_refno"), "equipment_refno")
     if len(equipment_refno) > _EQUIPMENT_REF_MAX_LENGTH or "*" in equipment_refno:
         raise ValueError("equipment_refno must be an explicit reference of at most 256 characters without wildcards")
@@ -161,7 +165,8 @@ def _parameters(args: dict[str, Any]) -> dict[str, Any]:
         else:
             step["target_refno"] = _ref(raw.get("target_refno"), f"steps[{index}].target_refno")
         normalized.append(step)
-    return {"equipment_refno": equipment_refno, "steps": normalized, "max_depth": max_depth, "limit": limit}
+    return {"equipment_refno": equipment_refno, "steps": normalized, "max_depth": max_depth,
+            "limit": limit, "include_native_previews": include_native_previews}
 
 
 def _sample_identity(sample: Any) -> dict[str, Any]:
@@ -667,8 +672,13 @@ def equipment_model_plan(bridge: BridgeClient, settings: Settings, args: dict[st
         "equipment_refno": request["equipment_refno"], "steps": [],
         "context_consistency": {"status": "unknown", "atomic": False},
         "evidence": {}, "issues": [],
-        "scope": "Read-only plan from separate live E3D observations. No edit-tool preview is executed; the listed create/copy revisions must come from a later native dry_run preview.",
-        "write_viability_scope": "Candidate for a separate native dry_run preview only; this result is never execution permission or an E3D expected_revision.",
+        "native_previews": {"requested": request["include_native_previews"],
+            "status": "not_requested" if not request["include_native_previews"] else "not_attempted",
+            "complete": None if not request["include_native_previews"] else False,
+            "prepared_count": 0, "stopped_on_native_fault": False,
+            "preview_context": {"before": None, "after": None, "boundary_agreement": None}},
+        "scope": "Read-only plan from separate live E3D observations. Optional create/copy/transform previews use dry_run only and do not perform model edits.",
+        "write_viability_scope": "Native preview revisions are valid only for the exact reviewed request and matching session/build/context; they are not engineering approval or permission.",
     }
     before = context_snapshot(bridge, settings)
     response["evidence"]["context_before"] = before
@@ -1049,12 +1059,63 @@ def equipment_model_plan(bridge: BridgeClient, settings: Settings, args: dict[st
     response["write_viability"] = ("blocked" if response["status"] == "blocked" else
         "candidate_for_native_preview" if response["status"] == "ready" and response["read_coverage_complete"]
         else "unknown")
+    if request.pop("include_native_previews"):
+        _prepare_native_previews(bridge, settings, response, request["steps"], context_identity)
     response["plan_fingerprint"] = hashlib.sha256(json.dumps(
         {"request": request, "equipment_refno": request["equipment_refno"],
          "session_id": context_identity.get("session_id"), "steps": response["steps"]},
         sort_keys=True, separators=(",", ":"), ensure_ascii=True, default=str).encode("utf-8")).hexdigest()
     response["plan_fingerprint_scope"] = "Advisory hash of this plan/evidence only; never accepted as expected_revision."
     return response
+
+
+def _prepare_native_previews(bridge: BridgeClient, settings: Settings, response: dict[str, Any],
+                             steps: list[dict[str, Any]], context: dict[str, Any]) -> None:
+    previews = response["native_previews"]
+    if response["status"] != "ready" or not response["read_coverage_complete"]:
+        previews["status"] = "skipped_plan_not_ready"
+        return
+    before = response["evidence"]["context_after"]
+    previews["preview_context"]["before"] = before
+    observed = []
+    for item, step in zip(response["steps"], steps):
+        operation = step["operation"]
+        tool = "e3d_set_transform" if operation == "transform" else f"e3d_{operation}_element"
+        arguments = {"dry_run": True, **{key: step[key] for key in
+                     ("name", "element_type", "attributes", "position", "orientation", "wrt") if key in step}}
+        for argument, subject in (("parent_refno", "parent"), ("source_refno", "source"), ("refno", "target")):
+            if item[subject] is not None:
+                arguments[argument] = item[subject]["identity"]["refno"]
+        preview = model_edit_preview(bridge, tool, arguments, context)
+        item["native_preview"] = preview
+        if preview["status"] in {"native_fault", "dispatch_failed"}:
+            previews["stopped_on_native_fault"] = preview["status"] == "native_fault"
+            previews["status"] = ("stopped_on_native_fault" if previews["stopped_on_native_fault"]
+                                  else "preview_dispatch_failed")
+            return
+        if preview["status"] == "observed":
+            observed.append(item)
+
+    after = context_snapshot(bridge, settings)
+    previews["preview_context"]["after"] = after
+    bracket = _context_bracket(before, after)
+    agreement = {"consistent": True, "changed": False}.get(bracket["status"])
+    previews["preview_context"]["boundary_agreement"] = agreement
+    if agreement is not True:
+        previews["status"] = "context_unverified"
+        for item in observed:
+            item["native_preview"]["status"] = "context_unverified"
+        return
+
+    for item in observed:
+        preview = item["native_preview"]
+        if item["operation"] != "transform":
+            item["revision"].update(native_token=preview["response"]["result"]["revision"], source="native_dry_run",
+                                    next_step="Use the exact native preview arguments and its revision.")
+        preview["status"] = "prepared"
+    previews["prepared_count"] = len(observed)
+    previews["complete"] = len(observed) == len(steps)
+    previews["status"] = "prepared" if previews["complete"] else "partial_or_unknown"
 
 
 def _plan_read_coverage_complete(response: dict[str, Any], bracket: dict[str, Any]) -> bool:
@@ -1128,15 +1189,16 @@ def register_equipment_model_plan(server: McpServer, bridge: BridgeClient, setti
         TOOL,
         "Build a read-only, bounded plan for up to 16 explicit create, copy or transform steps under one EQUI. "
         "Reads one complete equipment manifest, native parent/target schemas, optional same-type attribute constraints, "
-        "WORLD poses and frame conversions, bracketed by fresh context snapshots. Inspect status, context_consistency, "
-        "step parent paths, constraints, unknowns and write_steps. A ready result is not a native edit preview or engineering approval. "
-        "Create/copy revisions are obtained only by a later dry_run on their existing write tools. "
-        "e3d_set_transform has no revision guard. This tool never calls create/copy/transform write routes, PML, selection, display or capture.",
+        "WORLD poses and frame conversions, bracketed by fresh context snapshots. Set include_native_previews=true to request the exact create/copy/transform dry_run routes and receive native create/copy revisions when context remains stable. Inspect status, context_consistency, "
+        "step parent paths, constraints, unknowns and write_steps. A ready result is not engineering approval. "
+        "e3d_set_transform has no revision guard. This tool does not execute model writes, PML, selection, display or capture.",
         {"type": "object", "properties": {
             "equipment_refno": {**reference, "description": "Explicit EQUI /NAME or DBREF; the complete bounded manifest root."},
             "steps": {"type": "array", "items": step_schema, "minItems": 1, "maxItems": 16},
             "max_depth": {"type": "integer", "minimum": 1, "maximum": 32, "default": 32},
             "limit": {"type": "integer", "minimum": 1, "maximum": 200, "default": 200},
+            "include_native_previews": {"type": "boolean", "default": False,
+                "description": "Request exact native dry_run previews after the read-only plan is complete. No model writes are performed."},
         }, "required": ["equipment_refno", "steps"], "additionalProperties": False},
         lambda args: equipment_model_plan(bridge, settings, args), read_only=True,
     )

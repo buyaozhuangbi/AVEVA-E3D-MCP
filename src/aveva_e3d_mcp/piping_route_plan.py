@@ -9,6 +9,7 @@ from .branch_snapshot import piping_branch_state
 from .bridge import BridgeClient, BridgeError, element_access_refnos, normalize_expected_element_type
 from .context_snapshot import context_snapshot
 from .pipe_member_manifest import pipe_member_manifest
+from .model_plan_preview import model_edit_preview
 from .protocol import McpServer
 
 
@@ -335,8 +336,11 @@ def _write_sequence(root_refno: str, members: list[dict[str, Any]]) -> list[dict
 
 
 def piping_route_plan(bridge: BridgeClient, args: dict[str, Any]) -> dict[str, Any]:
-    if not isinstance(args, dict) or set(args) - {"root_refno", "planned_members", "endpoints", "max_depth", "member_limit"}:
-        raise ValueError("Only root_refno, planned_members, endpoints, max_depth and member_limit are accepted")
+    if not isinstance(args, dict) or set(args) - {"root_refno", "planned_members", "endpoints", "max_depth", "member_limit", "include_native_previews"}:
+        raise ValueError("Only root_refno, planned_members, endpoints, max_depth, member_limit and include_native_previews are accepted")
+    include_native_previews = args.get("include_native_previews", False)
+    if type(include_native_previews) is not bool:
+        raise ValueError("include_native_previews must be a boolean")
     root_refno = _explicit_ref(args.get("root_refno"), "root_refno")
     members = _member_specs(args.get("planned_members"), root_refno)
     endpoints = _endpoints(args.get("endpoints"))
@@ -355,14 +359,20 @@ def piping_route_plan(bridge: BridgeClient, args: dict[str, Any]) -> dict[str, A
         "context": {"before": None, "after": None, "boundary_agreement": None, "status": "unknown"},
         "revision": None,
         "revision_policy": {"value": None, "source": "not_observed", "execution_allowed": False,
-                             "message": "Read-only planning never obtains a write preview revision."},
+                             "message": "The plan has no shared revision. Optional native previews provide per-step revisions."},
         "sources": {"member_manifest": None, "branch_states": [], "connection_points": [],
                     "connection_trace": [], "schemas": []},
         "explicit_members": [], "endpoints": [], "name_candidates": [], "type_candidates": [], "property_candidates": [],
         "planned_members": [{key: value for key, value in member.items()} for member in members],
         "write_sequence": _write_sequence(root_refno, members), "read_errors": [],
+        "native_previews": {"requested": include_native_previews,
+            "status": "not_attempted" if include_native_previews else "not_requested",
+            "complete": False if include_native_previews else None,
+            "prepared_count": 0, "deferred_count": 0, "stopped_on_native_fault": False,
+            "preview_context": {"before": None, "after": None, "boundary_agreement": None},
+            "scope": "Optional exact-request dry_run previews only. No model writes or set-attribute previews for not-yet-created elements."},
         "scope": "Read-only plan over live native evidence. Cross-request reads are not a database lock. "
-                 "No create/set-attribute preview, model write, command, CE switch, view change or capture is issued.",
+                 "By default no create/set-attribute preview is issued. Optional native previews are dry_run only; no model write, command, CE switch, view change or capture is issued.",
     }
     envelope = {"ok": True, "version": version, "result": result}
 
@@ -617,8 +627,8 @@ def piping_route_plan(bridge: BridgeClient, args: dict[str, Any]) -> dict[str, A
         isinstance(binding, dict) and binding.get("matches_enclosing_context") is True
         for binding in binding_rows)
     names_clear = all(row.get("status") == "no_observed_collision" for row in result.get("name_candidates", []))
-    read_complete = (
-        agreement is True and all_sources_bound and names_clear and
+    sources_complete = (
+        agreement is True and all_sources_bound and
         isinstance(manifest_result, dict) and manifest_result.get("complete") is True and
         all(isinstance(row.get("response"), dict) and row["response"].get("result", {}).get("complete") is True
             for row in result["sources"]["branch_states"]) and
@@ -634,10 +644,69 @@ def piping_route_plan(bridge: BridgeClient, args: dict[str, Any]) -> dict[str, A
             for row in result["sources"]["schemas"]) and
         not result["read_errors"]
     )
+    read_complete = sources_complete and names_clear
     result["available"] = isinstance(manifest_result, dict) and manifest_result.get("available") is True
     result["complete"] = result["success"] = bool(read_complete)
     result["status"] = "complete_observation" if read_complete else "partial_or_unknown"
+    if include_native_previews:
+        if sources_complete:
+            _prepare_native_previews(bridge, result, manifest_result["root"], after)
+        else:
+            result["native_previews"]["status"] = "skipped_incomplete_read_observation"
     return envelope
+
+
+def _prepare_native_previews(bridge: BridgeClient, result: dict[str, Any],
+                             root: dict[str, Any], before: dict[str, Any]) -> None:
+    previews = result["native_previews"]
+    previews["preview_context"]["before"] = before
+    names = {row["planned_member_index"]: row["status"] for row in result["name_candidates"]}
+    observed = []
+    for step in result["write_sequence"]:
+        arguments = step["arguments"]
+        if step["kind"] == "set_attributes_preview":
+            step["preview_status"] = "deferred_until_created_refno"
+        elif arguments["parent_refno"].startswith("<created_refno_"):
+            step["preview_status"] = "deferred_parent_not_yet_created"
+        elif names[step["planned_member_index"]] != "no_observed_collision":
+            step["preview_status"] = "blocked_or_unverified_name"
+        else:
+            arguments = {**arguments, "parent_refno": root["refno"], "wrt": arguments.get("wrt", "OWNER")}
+            preview = model_edit_preview(bridge, step["tool"], arguments, before["identity"])
+            step["native_preview"] = preview
+            step["preview_status"] = preview["status"]
+            if preview["status"] in {"native_fault", "dispatch_failed"}:
+                previews["stopped_on_native_fault"] = preview["status"] == "native_fault"
+                previews["status"] = ("stopped_on_native_fault" if previews["stopped_on_native_fault"]
+                                      else "preview_dispatch_failed")
+                return
+            if preview["status"] == "observed":
+                observed.append(step)
+            continue
+        previews["deferred_count"] += 1
+
+    if observed:
+        after = _identity(_read("native_preview_context_after", lambda: context_snapshot(bridge, bridge.settings),
+                                previews.setdefault("read_errors", [])))
+        previews["preview_context"]["after"] = after
+        agreement = _context_agreement(before, after)
+        previews["preview_context"]["boundary_agreement"] = agreement
+        if agreement is not True:
+            previews["status"] = "context_unverified"
+            for step in observed:
+                step["native_preview"]["status"] = "context_unverified"
+                step["preview_status"] = "context_unverified"
+            return
+    for step in observed:
+        preview = step["native_preview"]
+        revision = preview["response"]["result"]["revision"]
+        step.update(revision=revision, expected_revision=revision, preview_status="prepared",
+                    execution_arguments={**preview["arguments"], "dry_run": False, "expected_revision": revision},
+                    next_execution_requires="Use these exact arguments while the native revision remains current.")
+        preview["status"] = "prepared"
+    previews["prepared_count"] = len(observed)
+    previews["complete"] = len(observed) == len(result["write_sequence"])
+    previews["status"] = "prepared" if previews["complete"] else "partial_or_unknown"
 
 
 def register_piping_route_plan(server: McpServer, bridge: BridgeClient) -> None:
@@ -645,7 +714,7 @@ def register_piping_route_plan(server: McpServer, bridge: BridgeClient) -> None:
         TOOL,
         "Build a read-only plan for an explicit PIPE or BRAN. Reads the bounded member manifest, each observed BRAN state, "
         "actual typed member P-points, optional explicit endpoint P-points and PCREF traces, and schema candidates for existing same-type elements. "
-        "Returns a proposed ordered create_element/set_attributes dry-run sequence only; every revision is null and no create/set preview or write is called. "
+        "Returns a proposed ordered create_element/set_attributes dry-run sequence. Set include_native_previews=true to request exact create dry_run receipts and revisions for currently existing root children; descendants of planned new parents and post-create attribute setters stay deferred. No model write is issued. "
         "Cross-request reads are live, non-atomic observations; missing or changed session/project/MDB/CE context remains unknown. "
         "Schema and connection evidence do not validate proposed values, geometry, routing, catalogue compatibility or engineering suitability.",
         {"type": "object", "properties": {
@@ -675,6 +744,8 @@ def register_piping_route_plan(server: McpServer, bridge: BridgeClient) -> None:
             }, "required": ["refno", "expected_type", "point_number"], "additionalProperties": False}, "default": []},
             "max_depth": {"type": "integer", "minimum": 1, "maximum": 16, "default": 8},
             "member_limit": {"type": "integer", "minimum": 1, "maximum": MAX_MANIFEST_MEMBERS, "default": 16},
+            "include_native_previews": {"type": "boolean", "default": False,
+                "description": "Request exact create dry_run previews for planned direct children of the observed root. No model edits are performed; planned descendants remain deferred."},
         }, "required": ["root_refno", "planned_members"], "additionalProperties": False},
         lambda args: piping_route_plan(bridge, args), read_only=True,
     )

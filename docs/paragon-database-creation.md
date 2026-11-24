@@ -13,12 +13,13 @@
     "team": "CATALOGUE",
     "name": "FITTINGS",
     "database_type": "CATA",
-    "access": "UPDATE"
+    "access": "UPDATE",
+    "root_name": "PARAGON_ROOT"
   }
 }
 ```
 
-该调用的 `candidate_command` 保持为非执行候选，`admin_handoff.suggested_command_template` 会附加 `WITH CATA /<CATALOGUE_ROOT_NAME>`。用户在 ADMIN 表单中选定根名后，再按实际项目配置完成建库。
+`root_name` 是可选的 Catalogue 根名称，不含开头斜线。填写后，`candidate_command` 和 ADMIN handoff 会带入 `WITH CATA /PARAGON_ROOT`。省略时结果保留根名占位符，用户可在 ADMIN 中选择名称。两种方式都只生成非执行候选。
 
 先检查 preflight 的 `complete`、当前 MDB 名称和数据库冲突。`name_in_current_mdb=false` 仅表示完整扫描时当前 MDB 未观察到同名项，不代表项目范围内唯一。团队是否存在、目录是否可用、权限和项目级 DBNO 唯一性仍需在 ADMIN 中确认。
 
@@ -30,7 +31,7 @@
 - Area 和 DB Number 按交接包填写。省略 DBNO 时由 ADMIN 选择，不能把 preflight 的冲突检查当作号码分配锁。
 - Controlled、Reference Only、Protected、Description、主存储位置和其他组织配置由 ADMIN 用户检查并填写。
 
-`suggested_command_template` 对照本机安装的 `PMLLIB/admin/forms/admdb.pmlfrm` CREATE 分支构造。`<CATALOGUE_ROOT_NAME>` 是占位符，必须由用户替换。模板不代表已通过 PML 解析，也不能直接提交给 `e3d_execute_pml`。ADMIN 表单还会检查团队、区域、DBNO 和存储位置。工具没有替用户完成这些检查。
+`suggested_command_template` 对照本机安装的 `PMLLIB/admin/forms/admdb.pmlfrm` CREATE 分支构造，供填写 ADMIN 表单时参考。如果出现 `<CATALOGUE_ROOT_NAME>`，在表单中选择实际名称。由 ADMIN 核验团队、区域、DBNO 和存储位置并执行创建。
 
 当前 E3D 2.10 bridge 工程没有引用独立的 AVEVA Administration 程序集。ADMIN 数据库 API 属于另一套运行时，因此本轮把建库交接给 ADMIN 表单，没有把候选命令接到通用命令接口，也没有声称已验证当前用户的 ADMIN 权限。
 
@@ -41,8 +42,8 @@ ADMIN 创建的 CATA 数据库及根元素与后续 PARAGON 元件生成是分�
 建库并完成 MDB 配置后，使用 `post_create_verification.steps` 中的只读工具调用：
 
 1. `e3d_database_state` 从当前 MDB 读取新库名称、类型和数据库号。若首个 200 项页面有后续页，使用返回的 `next_offset` 和 `context_id` 继续。
-2. `e3d_team_database_identity_manifest` 使用这次新鲜读取的 `context_id`，核对 typed DB → DBLI → TEAM owner chain 及当前 MDB 匹配。
-3. `e3d_paragon_catalogue_manifest` 使用 `=<observed_database_number>/0`，确认 element 0 是 Catalogue 数据库中的原生根，并把观察到的根名与 `post_create_verification.expected_root_name` 核对。
+2. 将新读到的 `context_id` 传给 `e3d_team_database_identity_manifest`，检查 DB → DBLI → TEAM 的归属链，并将当前 MDB 中的候选身份与步骤 1 的数据库清单对照。候选身份的等价性仍待确认。
+3. 将 ADMIN 中填写的完整 `/NAME` 传给 `e3d_paragon_catalogue_manifest`。核对第 0 行的名称、`CATA` 元素类型和 Catalogue 存储类型，并用返回的 DBREF 核对目标数据库的归属。
 
 三项是分开的 SDK 读取，不构成数据库锁或一个原子快照。完整核验要求它们观察到相同 session、project 和 MDB；部分或截断的读取保留为未知。该流程只能证明数据库和根在当前 MDB 中可见，不能证明项目范围内唯一、Admin 权限、磁盘备份、未来可写或本次请求创建了该数据库。
 

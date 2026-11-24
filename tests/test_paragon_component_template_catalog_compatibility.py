@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from aveva_e3d_mcp.config import Settings
 from aveva_e3d_mcp.tools import create_server
+from catalog_compatibility import with_modeling_additions
 
 
 BASELINE = ROOT / "tests/fixtures/paragon_component_template_catalog113.json"
@@ -50,7 +51,7 @@ class ParagonComponentTemplateCatalogCompatibilityTests(unittest.TestCase):
         self.assertEqual(set(current_by_name) - set(old_by_name), ADDED_TOOLS)
         self.assertEqual(set(old_by_name) - set(current_by_name), set())
         self.assertEqual(
-            {name for name, historical in old_by_name.items() if current_by_name[name] != historical},
+            {name for name, historical in old_by_name.items() if current_by_name[name] != with_modeling_additions(historical)},
             {PLAN},
         )
         for name, historical in old_by_name.items():
@@ -63,7 +64,7 @@ class ParagonComponentTemplateCatalogCompatibilityTests(unittest.TestCase):
                     self.assertEqual(candidate["annotations"], historical["annotations"])
                     self.assertEqual(candidate.get("title"), historical.get("title"))
                     candidate["description"] = historical["description"]
-                self.assertEqual(candidate, historical)
+                self.assertEqual(candidate, with_modeling_additions(historical))
 
 
 if __name__ == "__main__":

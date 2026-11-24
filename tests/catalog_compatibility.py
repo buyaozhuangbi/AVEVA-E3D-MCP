@@ -41,12 +41,72 @@ CREATE_GUARDED_DESCRIPTION = (
     "inspect cleanup and residual state before retrying."
 )
 
+OPTIONAL_MODELING_FIELDS = {
+    "e3d_database_preflight": ("root_name", {
+        "type": "string", "pattern": r"^[A-Za-z][A-Za-z0-9_-]{0,31}$", "maxLength": 32,
+        "description": "Optional CATA Catalogue root element name without the leading slash. "
+                       "ADMIN creates the root when the user applies the form.",
+    }),
+    "e3d_equipment_model_plan": ("include_native_previews", {
+        "type": "boolean", "default": False,
+        "description": "Request exact native dry_run previews after the read-only plan is complete. No model writes are performed.",
+    }),
+    "e3d_piping_route_plan": ("include_native_previews", {
+        "type": "boolean", "default": False,
+        "description": "Request exact create dry_run previews for planned direct children of the observed root. "
+                       "No model edits are performed; planned descendants remain deferred.",
+    }),
+}
+
+_MODELING_DESCRIPTION_EDITS = {
+    "e3d_database_preflight": (
+        ("Admin creates CATA databases for PARAGON; this tool does not specify or create a CATA root element.",
+         "For PARAGON CATA, optional root_name adds a WITH CATA root clause for the user-configured ADMIN form; "
+         "this tool never creates the database or root."),
+    ),
+    "e3d_equipment_model_plan": (
+        ("fresh context snapshots. Inspect", "fresh context snapshots. Set include_native_previews=true to request "
+         "the exact create/copy/transform dry_run routes and receive native create/copy revisions when context remains stable. Inspect"),
+        ("A ready result is not a native edit preview or engineering approval. "
+         "Create/copy revisions are obtained only by a later dry_run on their existing write tools.",
+         "A ready result is not engineering approval."),
+        ("This tool never calls create/copy/transform write routes, PML, selection, display or capture.",
+         "This tool does not execute model writes, PML, selection, display or capture."),
+    ),
+    "e3d_piping_route_plan": (
+        ("Returns a proposed ordered create_element/set_attributes dry-run sequence only; every revision is null and no "
+         "create/set preview or write is called.",
+         "Returns a proposed ordered create_element/set_attributes dry-run sequence. Set include_native_previews=true "
+         "to request exact create dry_run receipts and revisions for currently existing root children; descendants of planned "
+         "new parents and post-create attribute setters stay deferred. No model write is issued."),
+    ),
+}
+
+
+def with_modeling_additions(historical):
+    name = historical["name"]
+    if name not in OPTIONAL_MODELING_FIELDS:
+        return historical
+    field, schema = OPTIONAL_MODELING_FIELDS[name]
+    updated = deepcopy(historical)
+    properties = updated["inputSchema"]["properties"]
+    if field not in properties:
+        properties[field] = schema
+        for old, new in _MODELING_DESCRIPTION_EDITS[name]:
+            assert old in updated["description"], (name, old)
+            updated["description"] = updated["description"].replace(old, new, 1)
+        if name == "e3d_database_preflight":
+            properties["database_type"]["description"] = (
+                "DESI is Design; CATA is the Catalogue database type. Optional root_name adds a CATA root through WITH CATA /NAME."
+            )
+    return updated
+
 
 def assert_legacy_tool_definition(testcase, current, historical):
     """Remove exactly the permitted optional additions, then compare everything.
 
-    Only create-element's exact guarded-execution description and condition are
-    also allowed. Other descriptions, annotations, defaults and fields stay exact.
+    Compare the approved schema and description deltas without changing the
+    saved fixtures.
     """
     candidate = deepcopy(current)
     name = historical["name"]
@@ -81,4 +141,4 @@ def assert_legacy_tool_definition(testcase, current, historical):
             testcase.assertEqual(candidate["inputSchema"].pop("allOf"), CREATE_EXECUTION_REVISION_REQUIRED, name)
             testcase.assertEqual(candidate["description"], CREATE_GUARDED_DESCRIPTION, name)
             candidate["description"] = historical["description"]
-    testcase.assertEqual(candidate, historical, name)
+    testcase.assertEqual(candidate, with_modeling_additions(historical), name)

@@ -8,7 +8,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from aveva_e3d_mcp.bridge import BridgeClient
+from aveva_e3d_mcp.bridge import BridgeClient, BridgeError
 from aveva_e3d_mcp.config import Settings
 from aveva_e3d_mcp.piping_route_plan import TOOL, _member_specs, _write_sequence, piping_route_plan, register_piping_route_plan
 from aveva_e3d_mcp.protocol import McpServer
@@ -127,9 +127,11 @@ def trace_reply(starts, _hops=None, _nodes=None):
                               "point_number": start["point_number"]} for start in starts]}}
 
 
-def observed_plan(*, after=None, args=None, mutate_source=None):
+def observed_plan(*, after=None, args=None, mutate_source=None, previews=None, preview_after=None):
     bridge = BridgeClient(SETTINGS)
     contexts = [context(), context() if after is None else after]
+    if isinstance(args, dict) and args.get("include_native_previews") is True:
+        contexts.append(context() if preview_after is None else preview_after)
 
     def source(kind, reply):
         if mutate_source is not None:
@@ -146,7 +148,7 @@ def observed_plan(*, after=None, args=None, mutate_source=None):
                       side_effect=lambda starts, _hops, _nodes: source("connection_trace", trace_reply(starts))) as trace, \
          patch.object(BridgeClient, "element_schema", side_effect=lambda refno, names, _offset, _limit,
                       expected_type="": source("schema", schema(refno, expected_type, names))) as read_schema, \
-         patch.object(BridgeClient, "create_element") as create, \
+         patch.object(BridgeClient, "create_element", side_effect=previews) as create, \
          patch.object(BridgeClient, "set_attributes") as set_attributes, \
          patch.object(BridgeClient, "command") as command:
         response = piping_route_plan(bridge, ARGS if args is None else args)
@@ -195,6 +197,74 @@ def test_complete_observation_accepts_the_distinct_native_and_branch_binding_con
     assert branch["binding"]["checks"]["source_context_before_session_id"] is True
     assert branch["binding"]["checks"]["source_context_after_bridge_build"] is True
     assert all(call.call_count == 0 for call in calls[5:])
+
+
+def create_preview(parent, kind, name, attributes, position, x_axis, y_axis, wrt, dry_run):
+    return {"ok": True, "version": "E3D21", "result": {
+        "success": True, "dry_run": dry_run, "revision": "a" * 64, "parent": {"refno": parent},
+        "frame": {"requested": wrt}, "ce_before": "=1/44", "ce_after": "=1/44", "ce_unchanged": True,
+        "submitted": {"name": name, "attributes": attributes, "position": position,
+                      "orientation": None if x_axis is None else {"x_axis": x_axis, "y_axis": y_axis}},
+    }}
+
+
+def test_optional_native_previews_bind_exact_root_children_and_defer_uncreated_targets():
+    orientation = {"x_axis": [1, 0, 0], "y_axis": [0, 1, 0]}
+    members = [{**ARGS["planned_members"][0], "orientation": orientation}, ARGS["planned_members"][1]]
+    response, calls = observed_plan(args={**ARGS, "planned_members": members, "include_native_previews": True},
+                                    previews=create_preview)
+    result = response["result"]
+    previews = result["native_previews"]
+    assert result["complete"] is False
+    assert previews["requested"] is True
+    assert previews["prepared_count"] == 1
+    assert previews["deferred_count"] == 2
+    assert previews["complete"] is False
+    assert previews["status"] == "partial_or_unknown"
+    creates = [step for step in result["write_sequence"] if step["kind"] == "create_preview"]
+    assert [step["preview_status"] for step in creates] == ["prepared", "deferred_parent_not_yet_created"]
+    assert creates[0]["expected_revision"] == "a" * 64
+    assert creates[0]["execution_arguments"]["dry_run"] is False
+    assert creates[0]["execution_arguments"]["orientation"] == orientation
+    assert creates[1]["expected_revision"] is None
+    setters = [step for step in result["write_sequence"] if step["kind"] == "set_attributes_preview"]
+    assert setters[0]["preview_status"] == "deferred_until_created_refno"
+    calls[5].assert_called_once_with("=1/1", "BRAN", "/B2", {}, None, [1, 0, 0], [0, 1, 0], "OWNER", True)
+    assert calls[6].call_count == 0
+    assert previews["preview_context"]["boundary_agreement"] is True
+
+
+def test_native_fault_during_optional_preview_stops_without_followup_context_or_create_reads():
+    fault = BridgeError("native database fault", diagnostics={"native_fault_latched": True})
+    response, calls = observed_plan(args={**COMPLETE_ARGS, "include_native_previews": True}, previews=[fault])
+    result = response["result"]
+    assert result["complete"] is True
+    assert result["native_previews"]["status"] == "stopped_on_native_fault"
+    assert result["native_previews"]["stopped_on_native_fault"] is True
+    assert result["native_previews"]["preview_context"]["after"] is None
+    assert calls[5].call_count == 1
+    assert calls[6].call_count == 0
+    assert calls[7].call_count == 0
+
+
+@pytest.mark.parametrize("second", ["drift", "fault"])
+def test_optional_preview_withholds_earlier_revisions_on_drift_or_fault(second):
+    def preview(*args):
+        if second == "fault" and args[2] == "/T1":
+            raise BridgeError("native fault", diagnostics={"state": {"native_database_fault": {"has_fault": True}}})
+        return create_preview(*args)
+
+    response, calls = observed_plan(args={**COMPLETE_ARGS, "include_native_previews": True},
+        previews=preview, preview_after=context(session="other") if second == "drift" else None)
+    result = response["result"]
+    assert result["native_previews"]["status"] == (
+        "context_unverified" if second == "drift" else "stopped_on_native_fault")
+    assert calls[5].call_count == 2
+    assert all(step["expected_revision"] is None and "execution_arguments" not in step
+               for step in result["write_sequence"])
+    if second == "drift":
+        assert all(step["preview_status"] == "context_unverified"
+                   for step in result["write_sequence"] if step.get("native_preview"))
 
 
 @pytest.mark.parametrize("source_kind", ["member_manifest", "connection_points", "endpoint", "schema", "connection_trace"])
@@ -512,6 +582,7 @@ def test_write_sequence_parent_placeholders_follow_create_steps_after_interleave
         {"element_type": "ELBO", "name": "/T1"},
     ]},
     {**ARGS, "endpoints": [{"refno": "=1/9", "expected_type": "NOZZ", "point_number": True}]},
+    {**ARGS, "include_native_previews": 1},
     {**ARGS, "unexpected": True},
 ])
 def test_invalid_plan_inputs_fail_before_context_reads(args):
@@ -528,9 +599,10 @@ def test_tool_definition_is_bounded_read_only_and_contains_no_execution_switch()
     tool = server._dispatch({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}})["result"]["tools"][0]
     assert tool["name"] == TOOL
     assert tool["annotations"]["readOnlyHint"] is True
-    assert set(tool["inputSchema"]["properties"]) == {"root_refno", "planned_members", "endpoints", "max_depth", "member_limit"}
+    assert set(tool["inputSchema"]["properties"]) == {"root_refno", "planned_members", "endpoints", "max_depth", "member_limit", "include_native_previews"}
     assert "dry_run" not in tool["inputSchema"]["properties"]
     assert "expected_revision" not in tool["inputSchema"]["properties"]
+    assert tool["inputSchema"]["properties"]["include_native_previews"]["default"] is False
     assert tool["inputSchema"]["additionalProperties"] is False
 
 

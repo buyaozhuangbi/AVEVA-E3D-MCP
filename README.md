@@ -28,7 +28,7 @@
 
 - **层级与搜索**：`e3d_query`、`e3d_element_snapshot`、`e3d_list_members`、`e3d_find_descendants` 查询引用、读取树形结构、分页浏览直接成员或在明确根下搜索。
 - **属性与类型**：`e3d_read_attributes` 和 `e3d_read_attributes_batch` 读取格式化与类型化属性。`e3d_element_schema`、`e3d_validate_model` 检查合法子类型、属性元数据和已发布的尺寸规则。`e3d_element_access` 读取当前 session 和指定目标的访问、锁及 claim 观察。
-- **数据库身份**：`e3d_database_state`、`e3d_database_identity_snapshot` 读取当前 MDB 的数据库和身份清单。`e3d_team_database_identity_manifest` 观察 TEAM、DBLI、DB 及其类型化 owner 关系。`e3d_database_preflight` 对 DESI/CATA 生成非执行候选并检查当前 MDB 的名称和 DBNO 冲突。CATA 的 ADMIN 交接与核验见[建库说明](docs/paragon-database-creation.md)。
+- **数据库身份**：`e3d_database_state`、`e3d_database_identity_snapshot` 读取当前 MDB 的数据库和身份清单。`e3d_team_database_identity_manifest` 观察 TEAM、DBLI、DB 及其类型化 owner 关系。`e3d_database_preflight` 对 DESI/CATA 生成非执行候选并检查当前 MDB 的名称和 DBNO 冲突，可为 CATA 指定根名并生成 `WITH CATA` ADMIN handoff。建库后核验见[说明](docs/paragon-database-creation.md)。
 - **设备和管道清单**：`e3d_equipment_manifest` 读取 EQUI 下有界成员树，`e3d_pipe_member_manifest` 读取 PIPE/BRAN 成员，`e3d_piping_branch_state` 读取 BRAN 属性、规格、服务信息和直接成员。
 - **空间和批量测量**：`e3d_spatial_info` 与 `e3d_transform_coordinates` 在明确坐标系下读取或转换坐标。`e3d_measure_elements_batch` 批量读取空间位置、原生 bounds 和体积。`e3d_database_state` 的完整性仅指当前 MDB 观察范围，不代表项目范围内完整目录。
 
@@ -38,18 +38,20 @@
 
 1. 用 `e3d_equipment_manifest` 读取明确的 EQUI 和有界成员树，查看父子索引、成员顺序、类型、属性及截断原因。
 2. 用 `e3d_equipment_child_schema` 检查目标父级的当前 `IsCreatable` 观察、元素类型元数据，以及可选的现有同类型 exemplar 属性。它是只读 SDK 证据，不代表权限或新实例属性已验证。
-3. 用 `e3d_equipment_model_plan` 对 EQUI 下最多 16 个明确的 create、copy、transform 步骤形成只读计划。计划提供父路径、Schema、姿态转换和约束观察，不调用任何写入预览。
-4. 对计划中的具体步骤，使用 `e3d_create_element` 创建支持的子元素，`e3d_copy_element` 复制支持的几何树，`e3d_set_transform` 设置位置或姿态。写操作先预览，再按各工具要求提交 revision，随后检查原生回读和残留状态。
+3. 用 `e3d_equipment_model_plan` 对 EQUI 下最多 16 个明确的 create、copy、transform 步骤形成只读计划。设置 `include_native_previews=true` 可取得 SDK 的 `dry_run` 回执。上下文一致时，create 和 copy 步骤返回相应的 revision。
+4. 对已准备的步骤，用 `native_preview.arguments` 作为实际调用参数，将 `dry_run` 改为 `false`。`e3d_create_element` 和 `e3d_copy_element` 需要对应的 revision。`e3d_set_transform` 按目标和坐标系执行位姿更新。执行后检查原生回读。
 5. 用 `e3d_equipment_layout_drawing` 或 `e3d_equipment_layout_sheet` 检查明确列出的 EQUI 姿态和位置。需要所选模型几何轮廓时，可用 `e3d_equipment_outline_sheet` 或 `e3d_equipment_layout_tiles`，并显式提供来源几何。
 
-设备工具不会自动遍历工程并猜测所有部件，也不会从位置符号推导设备外形。model plan 是建议步骤，设备图纸通常基于显式选择的来源几何。完整工程树、UDET 设计规则、工程适用性和实机显示效果仍需在目标项目核对。
+设备计划以现有 EQUI 及其成员为范围。若上一步写入改变父级成员或坐标系，用新状态重新预览后续步骤。设备轮廓图使用显式选择的来源几何。
 
 ### 管道设计与连接检查
 
 - `e3d_piping_branch_state`、`e3d_pipe_member_manifest` 读取 BRAN/PIPE 结构和有序成员。
 - `e3d_connection_points` 读取明确元素的 PPLS/PPOS/PDIR 等原生连接点，`e3d_check_connection_pair` 对一对显式 P-point 进行 SDK 位置和方向观察。
-- `e3d_piping_connectivity_snapshot` 在一次 UI 回调中组合有界 BRAN 状态、P-point 配对及有向 PCREF 追踪。`e3d_trace_piping_connectivity` 对显式起点读取 directed PCREF 链。
-- `e3d_piping_specification_read` 读取规格引用的原生格式化/类型化字段，`e3d_piping_route_plan` 组合成员、BRAN、连接点和 Schema 证据，输出只读顺序建议。
+- `e3d_piping_connectivity_snapshot` 在一次 UI 回调中组合有界 BRAN 状态、P-point 配对及有向 PCREF 追踪。`e3d_trace_piping_connectivity` 对显式起点读取有向 PCREF 链。
+- `e3d_piping_specification_read` 读取规格引用的原生格式化和类型化字段。`e3d_piping_route_plan` 用成员、BRAN、连接点和 Schema 证据生成建模顺序。设置 `include_native_previews=true` 后，可为现有 PIPE 或 BRAN 下的计划直接子项取得原生创建预览。依赖新建父级或新元件属性的步骤，等拿到实际 DBREF 后再预览。
+
+创建同一父级下的多个计划项时，每个 revision 都针对当前观测到的父级成员状态。成功创建会改变该状态；执行一步后，先刷新计划，再执行剩余同级项。
 
 连接点相近不等于工程连接兼容，Schema 和规划结果也不会自动落成管道。`e3d_spatial_map_status` 当前暂停 native CheckSpatialMap，`e3d_native_clash_check` 暂停原生 clash 执行。不要把这两项状态当成已通过碰撞检查。
 

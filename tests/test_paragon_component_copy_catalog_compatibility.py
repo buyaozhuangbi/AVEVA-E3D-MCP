@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from aveva_e3d_mcp.config import Settings
 from aveva_e3d_mcp.tools import create_server
+from catalog_compatibility import with_modeling_additions
 
 
 BASELINE = ROOT / "tests/fixtures/paragon_component_copy_catalog115.json"
@@ -35,7 +36,7 @@ class ParagonComponentCopyCatalogCompatibilityTests(unittest.TestCase):
         self.assertEqual(set(before) - set(after), set())
         for name, definition in before.items():
             with self.subTest(tool=name):
-                self.assertEqual(after[name], definition)
+                self.assertEqual(after[name], with_modeling_additions(definition))
         self.assertFalse(after["e3d_paragon_component_copy"]["annotations"]["readOnlyHint"])
         self.assertTrue(after["e3d_paragon_component_copy_status"]["annotations"]["readOnlyHint"])
 

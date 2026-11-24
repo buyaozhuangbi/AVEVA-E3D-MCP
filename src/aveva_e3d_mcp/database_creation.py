@@ -23,8 +23,8 @@ TOOL = "e3d_database_preflight"
 def register_database_preflight(server: McpServer, bridge: BridgeClient) -> None:
     server.add_tool(
         TOOL,
-        "Build a non-executable E3D21 CREATE DB candidate for DESI or CATA. Admin creates CATA databases for PARAGON; "
-        "this tool does not specify or create a CATA root element. Inspect native readiness, project context and "
+        "Build a non-executable E3D21 CREATE DB candidate for DESI or CATA. For PARAGON CATA, optional root_name adds "
+        "a WITH CATA root clause for the user-configured ADMIN form; this tool never creates the database or root. Inspect native readiness, project context and "
         "name/DBNO conflicts in the current MDB through read-only SDK-backed endpoints. UPDATE and MULTIWRITE are "
         "the installed Admin form's access choices; MULTIWRITE explicitly uses CLAIM IMPLICIT. CONTROLLED is a "
         "separate database flag and is not accepted as access. Complete means a bounded single-dispatch current-MDB "
@@ -42,11 +42,13 @@ def register_database_preflight(server: McpServer, bridge: BridgeClient) -> None
                      "description": "Single ASCII database name component; normalized to uppercase. The 32-character cap is tool policy."},
             "database_type": {"type": "string", "enum": list(DATABASE_TYPES),
                               "description": "DESI is Design; CATA is the Catalogue database type. "
-                                             "The candidate has no initial element or WITH clause."},
+                                             "Optional root_name adds a CATA root through WITH CATA /NAME."},
             "access": {"type": "string", "enum": ["UPDATE", "MULTIWRITE"]},
             "database_number": {"type": "integer", "minimum": 1, "maximum": 255000},
             "area": {"type": "integer", "minimum": 0, "maximum": 999,
                      "description": "Zero/omitted uses the system area. Other areas are candidates only; directory availability is unverified."},
+            "root_name": {"type": "string", "pattern": TOKEN_PATTERN, "maxLength": 32,
+                          "description": "Optional CATA Catalogue root element name without the leading slash. ADMIN creates the root when the user applies the form."},
             "include_project_catalog": {"type": "boolean", "default": False,
                                         "description": "Try a separate read-only SDK catalog probe for positive DB and team matches. Requires a supporting E3D21 Addin."},
         }, "required": ["team", "name", "database_type", "access"], "additionalProperties": False},
@@ -55,8 +57,8 @@ def register_database_preflight(server: McpServer, bridge: BridgeClient) -> None
 
 
 def build_database_candidate(args: dict[str, Any]) -> dict[str, Any]:
-    if type(args) is not dict or set(args) - {"team", "name", "database_type", "access", "database_number", "area"}:
-        raise ValueError("Only team, name, database_type, access, database_number and area are accepted")
+    if type(args) is not dict or set(args) - {"team", "name", "database_type", "access", "database_number", "area", "root_name"}:
+        raise ValueError("Only team, name, database_type, access, database_number, area and root_name are accepted")
     normalized: dict[str, Any] = {}
     for field in ("team", "name"):
         value = args.get(field)
@@ -68,6 +70,13 @@ def build_database_candidate(args: dict[str, Any]) -> dict[str, Any]:
     database_type = args.get("database_type")
     if type(database_type) is not str or database_type not in DATABASE_TYPES:
         raise ValueError("database_type must be DESI or CATA")
+    if "root_name" in args:
+        root_name = args["root_name"]
+        if database_type != "CATA":
+            raise ValueError("root_name is only supported for CATA databases")
+        if type(root_name) is not str or not re.fullmatch(TOKEN_PATTERN, root_name, re.ASCII) or root_name.upper() == "UNSET":
+            raise ValueError("root_name must be one ASCII letter-led Catalogue root component of at most 32 characters")
+        normalized["root_name"] = root_name.upper()
     if args.get("access") not in ("UPDATE", "MULTIWRITE"):
         raise ValueError("access must be UPDATE or MULTIWRITE; CONTROLLED is a separate database flag")
     normalized.update(database_type=database_type, access=args["access"])
@@ -86,6 +95,8 @@ def build_database_candidate(args: dict[str, Any]) -> dict[str, Any]:
         parts += ["CLAIM IMPLICIT"]
     if "database_number" in normalized:
         parts += ["DBNO", str(normalized["database_number"])]
+    if "root_name" in normalized:
+        parts += ["WITH", "CATA", "/" + normalized["root_name"]]
     number = normalized.get("database_number", 0)
     return {
         "normalized_input": normalized, "full_database_name": full_name, "candidate_command": " ".join(parts),
@@ -104,7 +115,9 @@ def _admin_handoff(candidate: dict[str, Any]) -> dict[str, Any] | None:
         return None
 
     claim_mode = "IMPLICIT" if normalized["access"] == "MULTIWRITE" else None
-    command_template = candidate["candidate_command"] + " WITH CATA /<CATALOGUE_ROOT_NAME>"
+    command_template = candidate["candidate_command"]
+    if "root_name" not in normalized:
+        command_template += " WITH CATA /<CATALOGUE_ROOT_NAME>"
     return {
         "status": "manual_admin_configuration_required",
         "form": "E3D21 ADMIN > Database > Create",
@@ -116,8 +129,9 @@ def _admin_handoff(candidate: dict[str, Any]) -> dict[str, Any] | None:
         },
         "initial_element": {
             "type": "CATA",
-            "name": None,
-            "name_input": "Choose a literal Catalogue root name in the ADMIN form",
+            "name": "/" + normalized["root_name"] if "root_name" in normalized else None,
+            "name_input": "Use this proposed root name in ADMIN" if "root_name" in normalized else
+                          "Choose a literal Catalogue root name in the ADMIN form",
         },
         "access_mode": normalized["access"],
         "claim_mode": claim_mode,
@@ -137,13 +151,14 @@ def _admin_handoff(candidate: dict[str, Any]) -> dict[str, Any] | None:
 
 def _post_create_verification(candidate: dict[str, Any]) -> dict[str, Any]:
     normalized = candidate["normalized_input"]
+    root_name = "/" + normalized["root_name"] if "root_name" in normalized else "<name entered in ADMIN>"
     return {
         "status": "instructions_only",
         "scope": "current_mdb_if_the_created_database_is_visible_there",
         "fresh_context_required": True,
         "expected_database_name": candidate["full_database_name"],
         "expected_database_type": "Catalogue",
-        "expected_root_name": "<name entered in ADMIN>",
+        "expected_root_name": root_name,
         "steps": [
             {
                 "tool": "e3d_database_state",
@@ -153,18 +168,18 @@ def _post_create_verification(candidate: dict[str, Any]) -> dict[str, Any]:
             {
                 "tool": "e3d_team_database_identity_manifest",
                 "arguments": {"expected_context": "<fresh context_id from e3d_database_state>", "limit": 200},
-                "check": "Confirm the typed DB -> DBLI -> TEAM owner chain and current-MDB match for the same database.",
+                "check": "Check the typed DB -> DBLI -> TEAM owner chain and compare current-MDB candidate identities with database_state. Raw matches do not prove record equivalence.",
             },
             {
                 "tool": "e3d_paragon_catalogue_manifest",
-                "arguments": {"refno": "=<observed_database_number>/0", "max_depth": 1, "limit": 1, "attributes": []},
-                "check": "Confirm element 0 is a native Catalogue root and compare its observed name with expected_root_name.",
+                "arguments": {"refno": root_name, "max_depth": 1, "limit": 1, "attributes": []},
+                "check": "Match row 0 to the expected NAME, native CATA element type and Catalogue storage. Compare the returned DBREF with the intended database.",
             },
         ],
         "completion_requires": [
             "All three fresh reads identify the same session, project and MDB context.",
             "The typed database owner is " + normalized["team"] + " and the database type is Catalogue.",
-            "The requested Catalogue root name is observed at element 0.",
+            "The requested CATA element is observed by name and its database identity agrees with the intended Catalogue database.",
         ],
         "project_wide_uniqueness_verified": False,
         "database_created_by_this_request_verified": False,

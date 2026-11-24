@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from aveva_e3d_mcp.config import Settings
 from aveva_e3d_mcp.tools import create_server
+from catalog_compatibility import with_modeling_additions
 
 
 BASELINE = ROOT / "tests/fixtures/piping_specification_catalog110.json"
@@ -37,7 +38,7 @@ class PipingSpecificationCatalogCompatibilityTests(unittest.TestCase):
         self.assertEqual(set(old_by_name) - set(current_by_name), set())
         for name, historical in old_by_name.items():
             with self.subTest(tool=name):
-                self.assertEqual(current_by_name[name], historical)
+                self.assertEqual(current_by_name[name], with_modeling_additions(historical))
 
 
 if __name__ == "__main__":

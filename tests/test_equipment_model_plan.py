@@ -5,7 +5,7 @@ import unittest
 from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -238,6 +238,9 @@ class EquipmentModelPlanTests(unittest.TestCase):
         for args in invalid:
             with self.subTest(args=args), self.assertRaises(ValueError):
                 _parameters(args)
+        with self.assertRaises(ValueError):
+            _parameters({"equipment_refno": "=1/1", "steps": [{"step_id": "x", "operation": "transform",
+                "target_refno": "=1/3", "position": [0, 0, 0]}], "include_native_previews": 1})
 
     def test_root_wildcards_and_overlength_are_rejected_before_context_reads(self):
         invalid = ["/UNIT*", "/UNIT?", "/" + "X" * 256]
@@ -265,8 +268,10 @@ class EquipmentModelPlanTests(unittest.TestCase):
         self.assertEqual(server.tool["schema"]["properties"]["equipment_refno"]["maxLength"], 256)
         reference = server.tool["schema"]["properties"]["steps"]["items"]["properties"]["parent_refno"]
         self.assertEqual(reference["maxLength"], 256)
+        self.assertFalse(server.tool["schema"]["properties"]["include_native_previews"]["default"])
 
-    def _plan(self, bridge: FakeBridge, *, project_after: str = "PROJECT") -> dict:
+    def _plan(self, bridge: FakeBridge, *, project_after: str = "PROJECT", include_native_previews: bool = False,
+              preview_project: str = "PROJECT") -> dict:
         args = {"equipment_refno": "=1/1", "steps": [
             {"step_id": "create-box", "operation": "create", "parent_refno": "=1/2",
              "element_type": "BOX", "name": "/NEW", "wrt": "OWNER",
@@ -275,11 +280,18 @@ class EquipmentModelPlanTests(unittest.TestCase):
             {"step_id": "move-body", "operation": "transform", "target_refno": "=1/3",
              "wrt": "OWNER", "position": [2, 3, 4]},
         ]}
+        if include_native_previews:
+            args["include_native_previews"] = True
         after = context(project=project_after)
+        contexts = [context(), after]
+        if include_native_previews:
+            contexts.append(context(project=preview_project))
         with patch("aveva_e3d_mcp.equipment_model_plan.context_snapshot",
-                   side_effect=[context(), after]), \
+                   side_effect=contexts) as context_read, \
              patch("aveva_e3d_mcp.equipment_model_plan.equipment_manifest", return_value=manifest()):
-            return equipment_model_plan(bridge, self.settings, args)
+            result = equipment_model_plan(bridge, self.settings, args)
+        result["test_context_read_count"] = context_read.call_count
+        return result
 
     def test_ready_plan_is_read_only_and_has_explicit_write_steps(self):
         bridge = FakeBridge()
@@ -302,6 +314,81 @@ class EquipmentModelPlanTests(unittest.TestCase):
         self.assertEqual(bridge.transform_calls[0][0], "=1/2")
         self.assertEqual(bridge.spatial_calls, [("=1/3", "WORLD")])
         self.assertNotIn("create_element", bridge.__dict__)
+
+    @staticmethod
+    def _preview_bridge(revision):
+        bridge = FakeBridge()
+        native = {"success": True, "dry_run": True, "ce_before": "=1/90", "ce_after": "=1/90",
+                  "ce_unchanged": True, "frame": {"requested": "OWNER"}}
+        envelope = {"ok": True, "version": "E3D21"}
+        bridge.create_element = Mock(return_value={**envelope, "result": {
+            **native, "parent": {"refno": "=1/2"}, "revision": revision,
+            "submitted": {"name": "/NEW", "attributes": {"HEIG": "100"}, "position": [10, 20, 30], "orientation": None},
+        }})
+        bridge.set_transform = Mock(return_value={**envelope, "result": {
+            **native, "element": {"refno": "=1/3"}, "submitted": {"position": [2, 3, 4], "orientation": None},
+        }})
+        return bridge
+
+    def test_optional_native_previews_return_exact_revisions_and_context_binding(self):
+        revision = "b" * 64
+        bridge = self._preview_bridge(revision)
+        result = self._plan(bridge, include_native_previews=True)
+        self.assertTrue(result["success"])
+        self.assertFalse(result["writes_attempted"])
+        self.assertEqual(result["native_previews"]["status"], "prepared")
+        self.assertTrue(result["native_previews"]["complete"])
+        self.assertEqual(result["native_previews"]["prepared_count"], 2)
+        self.assertTrue(result["native_previews"]["preview_context"]["boundary_agreement"])
+        create, transform = result["steps"]
+        self.assertEqual(create["native_preview"]["status"], "prepared")
+        self.assertEqual(create["revision"]["native_token"], revision)
+        self.assertEqual(create["revision"]["source"], "native_dry_run")
+        bridge.create_element.assert_called_once_with("=1/2", "BOX", "/NEW", {"HEIG": "100"},
+            [10.0, 20.0, 30.0], None, None, "OWNER", True)
+        self.assertEqual(transform["native_preview"]["status"], "prepared")
+        bridge.set_transform.assert_called_once_with("=1/3", [2.0, 3.0, 4.0], None, None, "OWNER", True)
+
+    def test_context_drift_after_previews_withholds_the_revision(self):
+        result = self._plan(self._preview_bridge("b" * 64), include_native_previews=True, preview_project="OTHER")
+        self.assertEqual(result["native_previews"]["status"], "context_unverified")
+        self.assertFalse(result["native_previews"]["preview_context"]["boundary_agreement"])
+        self.assertEqual(result["steps"][0]["native_preview"]["status"], "context_unverified")
+        self.assertIsNone(result["steps"][0]["revision"]["native_token"])
+
+    def test_copy_preview_uses_resolved_refs_and_rejects_different_source(self):
+        bridge = FakeBridge()
+        preview = {
+            "ok": True, "version": "E3D21", "result": {
+                "success": True, "dry_run": True, "ce_before": "=1/90", "ce_after": "=1/90",
+                "ce_unchanged": True, "frame": {"requested": "OWNER"}, "revision": "b" * 64,
+                "parent": {"refno": "=1/2"}, "source": {"refno": "=1/5"},
+                "submitted": {"name": "/NEW", "position": None, "orientation": None},
+            },
+        }
+        bridge.copy_element = Mock(return_value=preview)
+        args = {"equipment_refno": "=1/1", "include_native_previews": True, "steps": [{
+            "step_id": "copy-box", "operation": "copy", "parent_refno": "/UNIT/FRAME",
+            "source_refno": "/UNIT/BOX-SEED", "name": "/NEW",
+        }]}
+        with patch("aveva_e3d_mcp.equipment_model_plan.context_snapshot", side_effect=[context() for _ in range(3)]), \
+             patch("aveva_e3d_mcp.equipment_model_plan.equipment_manifest", return_value=manifest()):
+            result = equipment_model_plan(bridge, self.settings, args)
+        bridge.copy_element.assert_called_once_with("=1/4", "=1/2", "/NEW",
+            position=None, x_axis=None, y_axis=None, wrt="OWNER", dry_run=True)
+        self.assertEqual(result["steps"][0]["native_preview"]["status"], "unverified")
+        self.assertIsNone(result["steps"][0]["revision"]["native_token"])
+
+    def test_native_fault_during_optional_preview_stops_without_followup_context_read(self):
+        bridge = FakeBridge()
+        bridge.create_element = Mock(side_effect=BridgeError("native fault", diagnostics={"native_fault_latched": True}))
+        result = self._plan(bridge, include_native_previews=True)
+        self.assertEqual(result["native_previews"]["status"], "stopped_on_native_fault")
+        self.assertTrue(result["native_previews"]["stopped_on_native_fault"])
+        self.assertIsNone(result["native_previews"]["preview_context"]["after"])
+        self.assertEqual(result["test_context_read_count"], 2)
+        bridge.create_element.assert_called_once()
+        self.assertFalse(hasattr(bridge, "copy_element"))
 
     def test_context_drift_downgrades_all_steps_to_unknown(self):
         result = self._plan(FakeBridge(), project_after="OTHER")

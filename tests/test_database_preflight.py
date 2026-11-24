@@ -197,6 +197,13 @@ class DatabasePreflightTests(unittest.TestCase):
         self.assertEqual(candidate["claim_policy"], "explicit_tool_policy_implicit")
         self.assertIs(candidate["native_syntax_validated"], False)
 
+    def test_cata_candidate_can_include_an_explicit_admin_root_name(self):
+        candidate = build_database_candidate({**CATA_ARGS, "root_name": "paragon_root"})
+        self.assertEqual(candidate["normalized_input"], {**CATA_ARGS, "root_name": "PARAGON_ROOT"})
+        self.assertEqual(candidate["candidate_command"],
+                         "CREATE DB CATALOGUE/FITTINGS CATA ACCESS UPDATE WITH CATA /PARAGON_ROOT")
+        self.assertIs(candidate["native_syntax_validated"], False)
+
     def test_cata_preflight_adds_manual_admin_handoff_and_post_create_checks(self):
         result, *_ = self.run_preflight({**CATA_ARGS, "area": 7, "access": "MULTIWRITE", "database_number": 1234})
         self.assertEqual(result["candidate_command"],
@@ -231,6 +238,14 @@ class DatabasePreflightTests(unittest.TestCase):
                          default_result["candidate_command"] + " WITH CATA /<CATALOGUE_ROOT_NAME>")
         self.assertEqual(default_result["post_create_verification"]["expected_root_name"], "<name entered in ADMIN>")
 
+        named_result, *_ = self.run_preflight({**CATA_ARGS, "root_name": "PARAGON_ROOT"})
+        self.assertEqual(named_result["admin_handoff"]["initial_element"], {
+            "type": "CATA", "name": "/PARAGON_ROOT", "name_input": "Use this proposed root name in ADMIN",
+        })
+        self.assertEqual(named_result["admin_handoff"]["suggested_command_template"], named_result["candidate_command"])
+        self.assertEqual(named_result["post_create_verification"]["expected_root_name"], "/PARAGON_ROOT")
+        self.assertEqual(named_result["post_create_verification"]["steps"][2]["arguments"]["refno"], "/PARAGON_ROOT")
+
     def test_desi_preflight_does_not_emit_paragon_admin_handoff(self):
         result, *_ = self.run_preflight(ARGS)
         self.assertIsNone(result["admin_handoff"])
@@ -252,6 +267,9 @@ class DatabasePreflightTests(unittest.TestCase):
             ("team", "TRANSACTION"), ("name", "FITTINGS WITH CATA /FITTINGS"), ("access", "CONTROLLED"),
             ("database_number", True), ("area", 1000), ("root_name", "/FITTINGS"), ("element_type", "CATA"),
             ("with", "CATA /FITTINGS"), ("dry_run", False))]
+        invalid += [{**CATA_ARGS, "root_name": value} for value in
+                    (None, True, "", "1ROOT", "ROOT/CHILD", "ROOT WITH CATA /OTHER", "UNSET", "A" * 33, "数据库")]
+        invalid += [{**ARGS, "root_name": "ROOT"}]
         bridge = BridgeClient(Settings(mode="bridge", version="E3D21"))
         with patch.object(bridge, "_request", side_effect=AssertionError("Invalid preflight reached the bridge")) as request:
             for arguments in invalid:
@@ -451,7 +469,7 @@ class DatabasePreflightToolTests(unittest.TestCase):
         self.assertEqual(tool["annotations"], {"readOnlyHint": True, "destructiveHint": False,
             "idempotentHint": True, "openWorldHint": False})
         self.assertEqual(set(tool["inputSchema"]["properties"]),
-                         {"team", "name", "database_type", "access", "database_number", "area", "include_project_catalog"})
+                         {"team", "name", "database_type", "access", "database_number", "area", "root_name", "include_project_catalog"})
         self.assertEqual(tool["inputSchema"]["properties"]["database_type"]["enum"], ["DESI", "CATA"])
         self.assertEqual(tool["inputSchema"]["required"], ["team", "name", "database_type", "access"])
         self.assertEqual(tool["inputSchema"]["properties"]["include_project_catalog"]["default"], False)
