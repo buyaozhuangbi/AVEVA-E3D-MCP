@@ -24,4 +24,4 @@ def test_release_version_and_additive_tool_catalog():
     assert set(current) - set(old) == {"e3d_paragon_generate_from_standard", "e3d_paragon_component_create", "e3d_paragon_component_create_status"}
     assert {name: current[name] for name in old} == old
     package = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    assert package["project"]["version"] == server.version == __version__ == "0.2.0"
+    assert package["project"]["version"] == server.version == __version__ == "0.2.1"

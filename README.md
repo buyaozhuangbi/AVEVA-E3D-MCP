@@ -2,7 +2,7 @@
 
 面向 AVEVA Everything3D（E3D）的模型开发与调试 MCP 服务。Python MCP server 通过标准输入/输出（stdio）连接 Codex、Claude Desktop、Cursor 等客户端；需要读取真实 E3D 状态时，再由 E3D 进程内的 .NET Addin 提供本机 HTTP bridge。
 
-当前包版本为 **0.2.0**。本分支注册 **122 个 MCP 工具**，其中直接新建 SCOM 需要加载包含新接口的 Addin。`tools/list` 显示当前实例的工具定义，运行能力取决于 E3D 版本、加载的 Addin 和配置。
+当前包版本为 **0.2.1**。本分支注册 **122 个 MCP 工具**。`tools/list` 显示当前实例的工具定义，实际运行能力取决于 E3D 版本、加载的 Addin 和配置。
 
 ## 能力概览
 
@@ -12,7 +12,18 @@
 - **几何与图纸**：提供有界几何观察、尺寸与连接点读取，以及参数化几何、剖面、装配、布置图和可选 SVG/DXF/PNG 输出。派生网格或图纸不等同于 E3D 原生几何或工程验收。
 - **受控编辑与 PML**：catalog 也包含明确目标的编辑、复制、显示/视图操作和 PML 工具。是否可执行由运行模式、工具参数和权限开关共同控制；请在真实会话里逐项检查目标与回执。
 
+## 0.2.1 可用能力
+
+- **PARAGON 元件建模**：在已有 CATE 下直接新建 SCOM，或复制已有 SCOM 模板；配置 PTSE、GMSE 和完整 PARAM 数组，并对新 REF、owner 和参数进行回读。
+- **按规范生成**：按 E3D 内置 SPEC/SPCO/CATREF 链路选取模板，或依据用户提供的外部标准及参数映射生成候选元件。
+- **Catalogue 数据库准备**：读取当前 MDB 冲突证据，为 CATA 数据库生成 ADMIN 表单交接字段、根元素命令模板和建库后的只读核验步骤。数据库由用户在 ADMIN 中创建和配置。
+- **E3D 模型调试**：读取元素层级、属性、Schema、数据库与上下文信息；创建或编辑受支持的原生几何；生成参数化视图、连接点、布置图和诊断证据。
+
+涉及写入的工具采用预览、明确执行和回读流程，具体范围以每个工具的 `dry_run`、状态工具、返回的证据和当前 Addin `api_features` 为准。离线测试通过不等于目标工程中的实机验收。
+
 PARAGON 的 Catalogue 数据库由用户在 E3D ADMIN 中配置。`e3d_paragon_generation_plan` 仍只生成候选草稿。新增的 `e3d_paragon_component_copy` 则提供实际生成新 SCOM 的执行路径：在同一 CATE 下复制现有模板、分配新名称，并独立回读新 REF、owner、PARAM 和规定范围内的引用。执行需要明确开启命令权限并提交原生预览的 session、build、revision 和唯一 request ID；服务不创建数据库或 CATE。
+
+`e3d_database_preflight` 可生成 DESI/CATA 建库候选。对 CATA，它额外返回供用户在 ADMIN 中完成的建库字段、CATA 根元素命令模板和建库后只读核验步骤；它不会执行建库命令。详情见[PARAGON Catalogue 数据库建库准备](docs/paragon-database-creation.md)。
 
 `e3d_paragon_component_copy_status` 可在超时或故障后只读查询原请求账本，禁止自动重试。该能力的离线合同测试不代替隔离 Catalogue 实机验收，也不证明完整几何或工程等价。输入、执行步骤、回读范围及失败处理见[PARAGON 元件生成说明](docs/paragon-component-generation.md)。
 

@@ -97,6 +97,80 @@ def build_database_candidate(args: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _admin_handoff(candidate: dict[str, Any]) -> dict[str, Any] | None:
+    """Build a user-filled ADMIN form handoff for PARAGON Catalogue databases."""
+    normalized = candidate["normalized_input"]
+    if normalized["database_type"] != "CATA":
+        return None
+
+    claim_mode = "IMPLICIT" if normalized["access"] == "MULTIWRITE" else None
+    command_template = candidate["candidate_command"] + " WITH CATA /<CATALOGUE_ROOT_NAME>"
+    return {
+        "status": "manual_admin_configuration_required",
+        "form": "E3D21 ADMIN > Database > Create",
+        "form_source": "PMLLIB/admin/forms/admdb.pmlfrm cbApply CREATE branch",
+        "database": {
+            "team": normalized["team"],
+            "name": normalized["name"],
+            "type": "CATA",
+        },
+        "initial_element": {
+            "type": "CATA",
+            "name": None,
+            "name_input": "Choose a literal Catalogue root name in the ADMIN form",
+        },
+        "access_mode": normalized["access"],
+        "claim_mode": claim_mode,
+        "area": normalized.get("area", 0),
+        "database_number": normalized.get("database_number"),
+        "suggested_command_template": command_template,
+        "command_template_is_executable": False,
+        "user_configurable_fields": [
+            "catalogue_root_name", "description", "area", "database_number",
+            "access_mode", "controlled", "reference_only", "protected",
+        ],
+        "admin_context_verified": None,
+        "permission_verified": None,
+        "execution_performed": False,
+    }
+
+
+def _post_create_verification(candidate: dict[str, Any]) -> dict[str, Any]:
+    normalized = candidate["normalized_input"]
+    return {
+        "status": "instructions_only",
+        "scope": "current_mdb_if_the_created_database_is_visible_there",
+        "fresh_context_required": True,
+        "expected_database_name": candidate["full_database_name"],
+        "expected_database_type": "Catalogue",
+        "expected_root_name": "<name entered in ADMIN>",
+        "steps": [
+            {
+                "tool": "e3d_database_state",
+                "arguments": {"offset": 0, "limit": 200},
+                "check": "Find the exact team/database name, Catalogue type and database number. Follow next_offset with the returned context_id if needed.",
+            },
+            {
+                "tool": "e3d_team_database_identity_manifest",
+                "arguments": {"expected_context": "<fresh context_id from e3d_database_state>", "limit": 200},
+                "check": "Confirm the typed DB -> DBLI -> TEAM owner chain and current-MDB match for the same database.",
+            },
+            {
+                "tool": "e3d_paragon_catalogue_manifest",
+                "arguments": {"refno": "=<observed_database_number>/0", "max_depth": 1, "limit": 1, "attributes": []},
+                "check": "Confirm element 0 is a native Catalogue root and compare its observed name with expected_root_name.",
+            },
+        ],
+        "completion_requires": [
+            "All three fresh reads identify the same session, project and MDB context.",
+            "The typed database owner is " + normalized["team"] + " and the database type is Catalogue.",
+            "The requested Catalogue root name is observed at element 0.",
+        ],
+        "project_wide_uniqueness_verified": False,
+        "database_created_by_this_request_verified": False,
+    }
+
+
 class _InvalidObservation(ValueError):
     pass
 
@@ -299,6 +373,8 @@ def database_preflight(bridge: BridgeClient, args: dict[str, Any]) -> dict[str, 
         "mcp_commands_enabled": bridge.settings.allow_commands,
         "blockers": ["execution_not_supported", "admin_context_unverified", "project_catalog_unavailable",
                      "team_existence_unverified", "area_availability_unverified"],
+        "admin_handoff": _admin_handoff(candidate),
+        "post_create_verification": _post_create_verification(candidate) if candidate["normalized_input"]["database_type"] == "CATA" else None,
         "read_errors": [],
     }
     return _database_preflight_identity_snapshot(bridge, candidate, version, result,

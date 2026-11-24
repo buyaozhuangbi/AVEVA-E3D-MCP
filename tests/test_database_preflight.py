@@ -197,6 +197,45 @@ class DatabasePreflightTests(unittest.TestCase):
         self.assertEqual(candidate["claim_policy"], "explicit_tool_policy_implicit")
         self.assertIs(candidate["native_syntax_validated"], False)
 
+    def test_cata_preflight_adds_manual_admin_handoff_and_post_create_checks(self):
+        result, *_ = self.run_preflight({**CATA_ARGS, "area": 7, "access": "MULTIWRITE", "database_number": 1234})
+        self.assertEqual(result["candidate_command"],
+                         "CREATE DB CATALOGUE/FITTINGS CATA IN AREA 7 ACCESS MULTIWRITE CLAIM IMPLICIT DBNO 1234")
+        handoff = result["admin_handoff"]
+        self.assertEqual(handoff["status"], "manual_admin_configuration_required")
+        self.assertEqual(handoff["database"], {"team": "CATALOGUE", "name": "FITTINGS", "type": "CATA"})
+        self.assertEqual(handoff["initial_element"], {
+            "type": "CATA", "name": None,
+            "name_input": "Choose a literal Catalogue root name in the ADMIN form",
+        })
+        self.assertEqual(handoff["claim_mode"], "IMPLICIT")
+        self.assertEqual(handoff["suggested_command_template"],
+                         result["candidate_command"] + " WITH CATA /<CATALOGUE_ROOT_NAME>")
+        self.assertIs(handoff["command_template_is_executable"], False)
+        self.assertIsNone(handoff["admin_context_verified"])
+        self.assertIsNone(handoff["permission_verified"])
+        self.assertIs(handoff["execution_performed"], False)
+        self.assertEqual(result["post_create_verification"]["status"], "instructions_only")
+        self.assertEqual([step["tool"] for step in result["post_create_verification"]["steps"]], [
+            "e3d_database_state", "e3d_team_database_identity_manifest", "e3d_paragon_catalogue_manifest",
+        ])
+        self.assertFalse(result["post_create_verification"]["project_wide_uniqueness_verified"])
+        self.assertFalse(result["post_create_verification"]["database_created_by_this_request_verified"])
+
+        default_result, *_ = self.run_preflight(CATA_ARGS)
+        default_handoff = default_result["admin_handoff"]
+        self.assertIsNone(default_handoff["claim_mode"])
+        self.assertEqual(default_handoff["area"], 0)
+        self.assertIsNone(default_handoff["database_number"])
+        self.assertEqual(default_handoff["suggested_command_template"],
+                         default_result["candidate_command"] + " WITH CATA /<CATALOGUE_ROOT_NAME>")
+        self.assertEqual(default_result["post_create_verification"]["expected_root_name"], "<name entered in ADMIN>")
+
+    def test_desi_preflight_does_not_emit_paragon_admin_handoff(self):
+        result, *_ = self.run_preflight(ARGS)
+        self.assertIsNone(result["admin_handoff"])
+        self.assertIsNone(result["post_create_verification"])
+
     def test_invalid_input_and_command_injection_never_read_bridge(self):
         invalid = [{}, {**ARGS, "access": "CONTROLLED"}, {**ARGS, "database_type": "TRAN"}, {**ARGS, "team": "TRANSACTION"}]
         for key in ("team", "name"):
