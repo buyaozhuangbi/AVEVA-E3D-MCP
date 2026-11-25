@@ -16,7 +16,7 @@ from catalog_compatibility import with_modeling_additions
 
 BASELINE = ROOT / "tests/fixtures/team_database_identity_catalog111.json"
 BASELINE_SHA256 = "d978cd04ad41be67dfbcc4618fd2dbc55ee02b939622f9153b8a76e8d55f92db"
-ADDED_TOOLS = {"e3d_team_database_identity_manifest", "e3d_paragon_generation_plan", "e3d_paragon_component_template", "e3d_paragon_reference_trace", "e3d_paragon_component_copy", "e3d_paragon_component_copy_status", "e3d_paragon_component_parameters_set", "e3d_paragon_component_parameters_status", "e3d_paragon_generate_from_standard", "e3d_paragon_component_create", "e3d_paragon_component_create_status"}
+ADDED_TOOLS = {"e3d_team_database_identity_manifest", "e3d_paragon_generation_plan", "e3d_paragon_component_template", "e3d_paragon_reference_trace", "e3d_paragon_component_copy", "e3d_paragon_component_copy_status", "e3d_paragon_component_parameters_set", "e3d_paragon_component_parameters_status", "e3d_paragon_generate_from_standard", "e3d_paragon_component_create", "e3d_paragon_component_create_status", "e3d_piping_route_create", "e3d_piping_route_verify"}
 
 
 class TeamDatabaseIdentityCatalogCompatibilityTests(unittest.TestCase):
@@ -29,9 +29,9 @@ class TeamDatabaseIdentityCatalogCompatibilityTests(unittest.TestCase):
         )["result"]["tools"]
 
         self.assertEqual(len(baseline), 111)
-        self.assertEqual(len(current), 122)
+        self.assertEqual(len(current), 124)
         self.assertEqual(len({tool["name"] for tool in baseline}), 111)
-        self.assertEqual(len({tool["name"] for tool in current}), 122)
+        self.assertEqual(len({tool["name"] for tool in current}), 124)
         old_by_name = {tool["name"]: tool for tool in baseline}
         current_by_name = {tool["name"]: tool for tool in current}
         self.assertEqual(set(current_by_name) - set(old_by_name), ADDED_TOOLS)

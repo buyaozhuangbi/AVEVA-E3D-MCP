@@ -31,7 +31,7 @@ ROUTES = (
 # Captured before component-create registration, from all 120 public tool
 # definitions (including their descriptions and complete input schemas).
 OLD_CATALOG_SHA256 = "90efe4ee3b16651726cd59931b6717f0efa98b3957e1746fb9fd7fe22e109b73"
-NEW_TOOLS = {"e3d_paragon_component_create", "e3d_paragon_component_create_status"}
+NEW_TOOLS = {"e3d_paragon_component_create", "e3d_paragon_component_create_status", "e3d_piping_route_create", "e3d_piping_route_verify"}
 
 
 def _selected_handler(adapter: str) -> str:
@@ -124,7 +124,7 @@ class ParagonComponentCreateHttpContractTests(unittest.TestCase):
         self.assertTrue(NEW_TOOLS <= by_name.keys())
         previous = [tool for tool in current if tool["name"] not in NEW_TOOLS]
         self.assertEqual(len(previous), 120)
-        self.assertEqual(len(current), 122)
+        self.assertEqual(len(current), 124)
         baseline = json.loads((ROOT / "tests/fixtures/paragon_standard_generation_catalog119.json").read_bytes())
         predecessors = {row["name"]: row for row in baseline["tools"]
                         if row["name"] in OPTIONAL_MODELING_FIELDS | OPTIONAL_IDENTITY_FIELDS}

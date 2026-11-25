@@ -2,7 +2,7 @@
 
 面向 AVEVA Everything3D（E3D）的模型开发与调试 MCP 服务。Codex、Claude Desktop 和 Cursor 等客户端通过 stdio 调用 Python 服务。连接真实工程时，Python 服务通过本机 HTTP 与 E3D 2.1 进程内的 .NET Addin 通信。
 
-当前版本为 **0.2.2**，注册 **122 个 MCP 工具**。使用 `tools/list` 查看工具定义，使用 `e3d_status` 检查连接和已加载 Addin 的功能。[版本更新](#版本更新)
+当前版本为 **0.2.2**，注册 **124 个 MCP 工具**。使用 `tools/list` 查看工具定义，使用 `e3d_status` 检查连接和已加载 Addin 的功能。[版本更新](#版本更新)
 
 ## 能力概览
 
@@ -51,10 +51,12 @@
 - `e3d_piping_connectivity_snapshot` 在一次 UI 回调中组合有界 BRAN 状态、P-point 配对及有向 PCREF 追踪。`e3d_trace_piping_connectivity` 对显式起点读取有向 PCREF 链。
 - `e3d_piping_specification_read` 读取规格引用的原生格式化和类型化字段。`e3d_piping_route_plan` 用成员、BRAN、连接点和 Schema 证据生成建模顺序。设置 `include_native_previews=true` 后，可为现有 PIPE 或 BRAN 下的计划直接子项取得原生创建预览。依赖新建父级或新元件属性的步骤，等拿到实际 DBREF 后再预览。
 - **中心线与弯头空间规划**：`e3d_piping_route_plan` 的可选 `centerline` 从两个显式原生 P-point 和最多 32 个 WORLD 路径点计算直段长度、圆弧弯头切点、圆心、法向、转角及总长。调用方指定半径、最小直段、容差和端点 PDIR 方向关系；工具报告短段、折返、弯头切向长度重叠及端点方向不符。可传 `planned_members: []` 单独规划路径。读取完整性与 `centerline_plan.geometric_fit` 分别报告。[输入示例与结果说明](docs/piping-centerline-planning.md)
+- **原生自动落模**：`e3d_piping_route_create` 从显式 BRAN 的 SPEC/HSTU 和固定目录 ELBO 模板创建新的 PIPE、BRAN、最多 16 个 90° 空间弯头及原生隐式 TUBI，也支持无弯头直管。预览返回生成的 PML 和修订号；执行前重查成员顺序、目录引用及端点，执行后核验弯头 PPOS/PDIR、规格和管段 ITLEN。独立新分支两端保持开口，现有端点作为几何定位依据。[原生落模流程](docs/piping-native-route.md)
+- **落模恢复核验**：`e3d_piping_route_verify` 对明确数字 REF 的现有 PIPE 作独立只读复查，支持 MCP 重启和 CE 切换。创建回执的 `verification_request` 保留输入和方案指纹；核验重新检查 WORLD 头尾、层级、规格、弯头及 TUBI。WORLD 头尾使用自动生成的只读 PML，因此仍需命令权限。核验结果单独返回，原创建回执继续保留。
 
 创建同一父级下的多个计划项时，每个 revision 都针对当前观测到的父级成员状态。成功创建会改变该状态；执行一步后，先刷新计划，再执行剩余同级项。
 
-连接点相近不等于工程连接兼容，Schema 和规划结果也不会自动落成管道。`e3d_spatial_map_status` 当前暂停 native CheckSpatialMap，`e3d_native_clash_check` 暂停原生 clash 执行。不要把这两项状态当成已通过碰撞检查。
+连接点相近不等于工程连接兼容。Schema 和只读规划结果仍需通过显式创建操作落模；原生自动落模也不提供工程连接或净距结论。`e3d_spatial_map_status` 当前暂停 native CheckSpatialMap，`e3d_native_clash_check` 暂停原生 clash 执行。不要把这两项状态当成已通过碰撞检查。
 
 ### PARAGON 元件与 Catalogue
 
@@ -102,6 +104,8 @@
 ## 版本更新
 
 ### v0.2.2
+
+当前开发分支在 v0.2.2 基础上追加原生管道自动落模与独立恢复核验。已在 E3D21 实测四个空间弯头、五段隐式 TUBI 的管线，以及无弯头直管；两种管线均完成原生回读，直管完成重复 UUID 检查和 MCP 重启后的方案指纹核验。发布标签仍指向原 v0.2.2 源码。
 
 - **管道与设备建模预览**。管道和设备计划可为现有父级下的直接子项请求原生 `dry_run` 与 revision；后续步骤依赖新建父级的，需取得 DBREF 后再预览。每次创建会改变父级成员状态，继续前应刷新计划。
 - **CATA 身份核验**。TEAM 原生 `NAMN` 的单个前导 `*` 作为名称标记处理，修复 DB → DBLI → TEAM 归属关系降级为未知的问题。身份清单上限提高到 250 项；CATA 建库后核验请求设置为 250，并继续保留分页、项目级唯一性和 MDB 记录等价性未知状态。[CATA 建库手册](docs/paragon-database-creation.md)

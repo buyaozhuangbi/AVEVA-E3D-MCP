@@ -16,7 +16,7 @@ from catalog_compatibility import with_modeling_additions
 
 BASELINE = ROOT / "tests/fixtures/equipment_child_schema_catalog109.json"
 BASELINE_SHA256 = "b40da5445a818cc93fa5050eab311782db8b15cdc062a36858974d89a49e2d34"
-ADDED_TOOLS = {"e3d_equipment_child_schema", "e3d_piping_specification_read", "e3d_team_database_identity_manifest", "e3d_paragon_generation_plan", "e3d_paragon_component_template", "e3d_paragon_reference_trace", "e3d_paragon_component_copy", "e3d_paragon_component_copy_status", "e3d_paragon_component_parameters_set", "e3d_paragon_component_parameters_status", "e3d_paragon_generate_from_standard", "e3d_paragon_component_create", "e3d_paragon_component_create_status"}
+ADDED_TOOLS = {"e3d_equipment_child_schema", "e3d_piping_specification_read", "e3d_team_database_identity_manifest", "e3d_paragon_generation_plan", "e3d_paragon_component_template", "e3d_paragon_reference_trace", "e3d_paragon_component_copy", "e3d_paragon_component_copy_status", "e3d_paragon_component_parameters_set", "e3d_paragon_component_parameters_status", "e3d_paragon_generate_from_standard", "e3d_paragon_component_create", "e3d_paragon_component_create_status", "e3d_piping_route_create", "e3d_piping_route_verify"}
 
 
 class EquipmentChildSchemaCatalogCompatibilityTests(unittest.TestCase):
@@ -29,9 +29,9 @@ class EquipmentChildSchemaCatalogCompatibilityTests(unittest.TestCase):
         )["result"]["tools"]
 
         self.assertEqual(len(baseline), 109)
-        self.assertEqual(len(current), 122)
+        self.assertEqual(len(current), 124)
         self.assertEqual(len({tool["name"] for tool in baseline}), 109)
-        self.assertEqual(len({tool["name"] for tool in current}), 122)
+        self.assertEqual(len({tool["name"] for tool in current}), 124)
         old_by_name = {tool["name"]: tool for tool in baseline}
         current_by_name = {tool["name"]: tool for tool in current}
         self.assertEqual(set(current_by_name) - set(old_by_name), ADDED_TOOLS)

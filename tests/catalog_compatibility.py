@@ -98,6 +98,7 @@ POST_0_2_1_PARAGON_TOOLS = {
     "e3d_paragon_reference_trace", "e3d_paragon_component_copy", "e3d_paragon_component_copy_status",
     "e3d_paragon_component_parameters_set", "e3d_paragon_component_parameters_status",
     "e3d_paragon_generate_from_standard", "e3d_paragon_component_create", "e3d_paragon_component_create_status",
+    "e3d_piping_route_create", "e3d_piping_route_verify",
 }
 
 _MODELING_DESCRIPTION_EDITS = {

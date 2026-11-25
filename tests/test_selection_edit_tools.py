@@ -28,7 +28,7 @@ class SelectionEditToolTests(unittest.TestCase):
 
     def test_discovery_declares_write_with_explicit_empty_clear_and_revision_guard(self):
         listed = self.server._dispatch({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})["result"]["tools"]
-        self.assertEqual(len(listed), 122)
+        self.assertEqual(len(listed), 124)
         tool = next(t for t in listed if t["name"] == "e3d_set_graphical_selection")
         self.assertEqual(tool["annotations"], {
             "readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False})

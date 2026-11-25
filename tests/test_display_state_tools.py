@@ -53,7 +53,7 @@ class DisplayStateToolTests(unittest.TestCase):
 
     def test_catalog_is_explicit_read_only_and_does_not_add_a_receipt_tool(self) -> None:
         tools = {tool['name']: tool for tool in self._rpc('tools/list', {})['tools']}
-        self.assertEqual(len(tools), 122)
+        self.assertEqual(len(tools), 124)
         self.assertEqual(sum('capture_after' in tool['inputSchema'].get('properties', {}) for tool in tools.values()), 19)
         read = tools['e3d_display_state']
         self.assertEqual(read['annotations'], {

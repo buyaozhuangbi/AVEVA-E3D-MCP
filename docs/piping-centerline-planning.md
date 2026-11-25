@@ -2,7 +2,7 @@
 
 `e3d_piping_route_plan` 的可选 `centerline` 把两个原生 P-point 和调用方提供的 WORLD 路径点连接成直段与圆弧弯头。它复用本次计划已读取的端点，核对 session/build/project/MDB/CE 绑定、WORLD 坐标系、PPEXST、毫米 PPOS 和单位 PDIR。
 
-这项能力在 Python MCP 侧计算，使用已有 Addin 的连接点读取接口，无需部署新的 DLL。公开工具仍为 122 个，版本维持 0.2.2。
+这项能力在 Python MCP 侧计算，使用已有 Addin 的连接点读取接口，无需部署新的 DLL。公开工具现为 124 个，版本维持 0.2.2；其中 `e3d_piping_route_create` 与 `e3d_piping_route_verify` 提供独立的[原生落模和复查流程](piping-native-route.md)。
 
 ## 调用示例
 
@@ -66,4 +66,4 @@
 
 本次实机只读验证使用同一现有管道的两个 ELBO 端点和四个中间路径点：100 mm 半径得到 5 个直段、4 个弯头，总长约 2062.119 mm；400 mm 半径明确报告 `bend_takeouts_overlap`，不返回组装路径。核验前后的 session/project/MDB/CE 一致，未执行模型写入。
 
-该计算覆盖局部中心线空间和端点切向，尚未检查路径自交、障碍物、外径包络、净距、规格或目录元件尺寸。落成原生管道仍需独立的目录选择、真实元素创建与连接操作及其原生回读。
+该计算覆盖局部中心线空间和端点切向，尚未检查路径自交、障碍物、外径包络、净距、规格或目录元件尺寸。需要创建固定目录 90° 弯头管线时，可使用 `e3d_piping_route_create` 的独立预览与执行流程；它核验所选模板与半径、口径并创建独立开口分支。创建后可用 `e3d_piping_route_verify` 和明确的 PIPE 数字 REF 独立复查，使用原 `plan_revision` 约束方案比较；详见[原生落模流程](piping-native-route.md)。与现有管线的工程连接仍需单独处理。

@@ -55,7 +55,7 @@ class CopyElementToolTests(unittest.TestCase):
 
     def test_catalog_exposes_explicit_guarded_copy_and_omitted_transform_semantics(self) -> None:
         tools = {tool["name"]: tool for tool in self._rpc("tools/list", {})["tools"]}
-        self.assertEqual(len(tools), 122)
+        self.assertEqual(len(tools), 124)
         copy = tools["e3d_copy_element"]
         self.assertEqual(copy["annotations"], {
             "readOnlyHint": False, "destructiveHint": True, "idempotentHint": False, "openWorldHint": False,
