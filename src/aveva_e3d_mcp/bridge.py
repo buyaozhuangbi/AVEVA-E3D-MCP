@@ -109,7 +109,7 @@ def element_access_refnos(values: Any) -> list[str]:
         refno = value.strip()
         valid = bool(refno) and not any(
             char.isspace() or ord(char) < 32 or 127 <= ord(char) < 160 for char in refno)
-        if valid and refno.startswith("/") and len(refno) > 1:
+        if valid and refno.startswith("/") and len(refno) > 1 and not any(char in refno for char in "*?"):
             pass
         elif valid and re.fullmatch(r"=[0-9]+/[0-9]+", refno):
             numbers = [part.lstrip("0") or "0" for part in refno[1:].split("/")]

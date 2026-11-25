@@ -95,6 +95,7 @@ class ElementAccessToolTests(unittest.TestCase):
             None, True, 12, {}, [], "", " ", "CE", "ce", "OWNER", "WORLD", "EQUI", "/", "=", "=1", "=1/2/3",
             "=x/2", "=1/x", "=0/2", "=1/-1", "=-1/2", "=+1/2", "=2147483648/2", "=1/2147483648",
             "=1.0/2", "=1/2.0", "=\u0661/2", "=1/" + "9" * 5000, "/PUMP\nDELETE CE", "/PUMP X", "/PUMP\x00", "/PUMP\x7f", "/PUMP\x80",
+            "/PUMP*", "/PUMP?", "/*PUMP",
         ))
         with patch.object(BridgeClient, "element_access") as read, patch.object(BridgeClient, "_request") as request:
             for args in invalid:
@@ -172,7 +173,8 @@ class ElementAccessToolTests(unittest.TestCase):
             request.assert_called_once_with("POST", "/api/v1/elements/access",
                 {"refnos": ["/PUMP", "=2147483647/2147483647"]}, version="E3D21")
             request.reset_mock()
-            for refnos in ([], ["CE"], ["/PUMP", "/pump"], ["=0/1"], ["=1/2147483648"], ["/P"] * 33, ("/PUMP",)):
+            for refnos in ([], ["CE"], ["/PUMP", "/pump"], ["/PUMP*"], ["/PUMP?"], ["=0/1"],
+                           ["=1/2147483648"], ["/P"] * 33, ("/PUMP",)):
                 with self.subTest(refnos=refnos), self.assertRaises(ValueError):
                     client.element_access(refnos)
             request.assert_not_called()
