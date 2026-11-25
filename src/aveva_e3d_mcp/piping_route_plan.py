@@ -414,7 +414,11 @@ def piping_route_plan(bridge: BridgeClient, args: dict[str, Any]) -> dict[str, A
         result["sources"]["branch_states"].append({"requested_refno": branch.get("refno"),
             "requested_type": "BRAN", "response": reply})
 
-    connection_members = [row for row in result["explicit_members"] if isinstance(row, dict) and row.get("type") != "PIPE"]
+    # BRAN is a route container, not a P-point component. Keep explicit TUBI
+    # reads for their native evidence, but allow partial alias evidence to be
+    # reported separately from root-level create previews.
+    connection_members = [row for row in result["explicit_members"] if isinstance(row, dict)
+                          and row.get("type") not in {"PIPE", "BRAN"}]
     starts: list[dict[str, Any]] = []
     omitted_starts = 0
     for row in connection_members:
@@ -626,33 +630,53 @@ def piping_route_plan(bridge: BridgeClient, args: dict[str, Any]) -> dict[str, A
     all_sources_bound = bool(binding_rows) and all(
         isinstance(binding, dict) and binding.get("matches_enclosing_context") is True
         for binding in binding_rows)
+    structural_rows = [result["sources"]["member_manifest"], *result["sources"]["branch_states"],
+                       *result["sources"]["schemas"]]
+    structural_bindings = [row.get("binding") for row in structural_rows if isinstance(row, dict)]
+    structural_sources_bound = bool(structural_bindings) and all(
+        isinstance(binding, dict) and binding.get("matches_enclosing_context") is True
+        for binding in structural_bindings)
+    connectivity_rows = [*result["sources"]["connection_points"], *result["endpoints"],
+                         *result["sources"]["connection_trace"]]
+    connectivity_bindings = [row.get("binding") for row in connectivity_rows if isinstance(row, dict)]
+    connectivity_sources_bound = all(
+        isinstance(binding, dict) and binding.get("matches_enclosing_context") is True
+        for binding in connectivity_bindings)
     names_clear = all(row.get("status") == "no_observed_collision" for row in result.get("name_candidates", []))
-    sources_complete = (
-        agreement is True and all_sources_bound and
+    structural_read_error_stages = {"context_before", "member_manifest", "branch_state", "element_schema", "context_after"}
+    structural_read_errors = any(error.get("stage") in structural_read_error_stages
+                                 for error in result["read_errors"])
+    structural_sources_complete = (
+        agreement is True and structural_sources_bound and not structural_read_errors and
         isinstance(manifest_result, dict) and manifest_result.get("complete") is True and
         all(isinstance(row.get("response"), dict) and row["response"].get("result", {}).get("complete") is True
             for row in result["sources"]["branch_states"]) and
-        all(_response_ok(row.get("response")) and row["response"]["result"].get("complete") is True
-            for row in result["sources"]["connection_points"]) and
-        all(_response_ok(row.get("response")) and row["response"]["result"].get("complete") is True
-            for row in result["endpoints"]) and
-        all(_response_ok(row.get("response")) and row["response"]["result"].get("complete") is True
-            for row in result["sources"]["connection_trace"]) and
         all(row.get("response") is not None and _response_ok(row.get("response")) and
             row["response"]["result"].get("success") is True and
             not row["response"]["result"].get("read_errors")
             for row in result["sources"]["schemas"]) and
         not result["read_errors"]
     )
-    read_complete = sources_complete and names_clear
+    connectivity_complete = (
+        connectivity_sources_bound and
+        all(_response_ok(row.get("response")) and row["response"]["result"].get("complete") is True
+            for row in result["sources"]["connection_points"]) and
+        all(_response_ok(row.get("response")) and row["response"]["result"].get("complete") is True
+            for row in result["endpoints"]) and
+        all(_response_ok(row.get("response")) and row["response"]["result"].get("complete") is True
+            for row in result["sources"]["connection_trace"])
+    )
+    read_complete = structural_sources_complete and connectivity_complete and names_clear
+    result["structural_read_complete"] = structural_sources_complete
+    result["connectivity_evidence_complete"] = connectivity_complete
     result["available"] = isinstance(manifest_result, dict) and manifest_result.get("available") is True
     result["complete"] = result["success"] = bool(read_complete)
     result["status"] = "complete_observation" if read_complete else "partial_or_unknown"
     if include_native_previews:
-        if sources_complete:
+        if structural_sources_complete:
             _prepare_native_previews(bridge, result, manifest_result["root"], after)
         else:
-            result["native_previews"]["status"] = "skipped_incomplete_read_observation"
+            result["native_previews"]["status"] = "skipped_incomplete_structural_observation"
     return envelope
 
 
@@ -714,7 +738,7 @@ def register_piping_route_plan(server: McpServer, bridge: BridgeClient) -> None:
         TOOL,
         "Build a read-only plan for an explicit PIPE or BRAN. Reads the bounded member manifest, each observed BRAN state, "
         "actual typed member P-points, optional explicit endpoint P-points and PCREF traces, and schema candidates for existing same-type elements. "
-        "Returns a proposed ordered create_element/set_attributes dry-run sequence. Set include_native_previews=true to request exact create dry_run receipts and revisions for currently existing root children; descendants of planned new parents and post-create attribute setters stay deferred. No model write is issued. "
+        "Returns a proposed ordered create_element/set_attributes dry-run sequence. BRAN rows and implicit TUBI aliases are retained as structural evidence; P-points are read from component anchors. Set include_native_previews=true to request exact create dry_run receipts and revisions for currently existing root children. Partial connectivity evidence does not erase an independent root-level dry_run; descendants of planned new parents and post-create attribute setters stay deferred. No model write is issued. "
         "Cross-request reads are live, non-atomic observations; missing or changed session/project/MDB/CE context remains unknown. "
         "Schema and connection evidence do not validate proposed values, geometry, routing, catalogue compatibility or engineering suitability.",
         {"type": "object", "properties": {

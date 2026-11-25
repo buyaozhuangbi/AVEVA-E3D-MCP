@@ -133,6 +133,14 @@ def _admin_handoff(candidate: dict[str, Any]) -> dict[str, Any] | None:
             "name_input": "Use this proposed root name in ADMIN" if "root_name" in normalized else
                           "Choose a literal Catalogue root name in the ADMIN form",
         },
+        "database_type_code": 2,
+        "root_creation": {
+            "mode": "admin_initial_element",
+            "element_type": "CATA",
+            "storage_type": "Catalogue",
+            "created_by_admin": True,
+            "root_name_required_before_apply": "root_name" not in normalized,
+        },
         "access_mode": normalized["access"],
         "claim_mode": claim_mode,
         "area": normalized.get("area", 0),
@@ -149,6 +157,66 @@ def _admin_handoff(candidate: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+def _catalogue_preflight(candidate: dict[str, Any], *, include_project_catalog: bool,
+                         result: dict[str, Any]) -> dict[str, Any] | None:
+    """Summarize CATA-specific evidence without turning bounded reads into proof of absence.
+
+    Database identity scans deliberately expose names and numbers only.  The
+    project/world catalog probe can add positive observations, but it does not
+    provide an Admin lock or project-wide uniqueness.  Keep those limits
+    explicit so callers can drive the ADMIN handoff from one stable object.
+    """
+    normalized = candidate["normalized_input"]
+    if normalized["database_type"] != "CATA":
+        return None
+    conflicts = result.get("conflicts", {})
+    catalog = result.get("project_catalog") if include_project_catalog else None
+    if conflicts.get("name_in_current_mdb") is True:
+        current_name_status = "observed_current_mdb_collision"
+    elif conflicts.get("name_in_current_mdb") is False:
+        current_name_status = "no_observed_current_mdb_collision"
+    else:
+        current_name_status = "unknown"
+    catalog_status = "not_requested"
+    catalog_match = None
+    world_match = None
+    if include_project_catalog and isinstance(catalog, dict):
+        if catalog.get("status") in {"observed", "partial"}:
+            catalog_status = "observed"
+            positive = catalog.get("positive_matches")
+            world = catalog.get("world_level", {})
+            if isinstance(positive, dict):
+                catalog_match = positive.get("name")
+            if isinstance(world, dict):
+                world_positive = world.get("positive_matches")
+                if isinstance(world_positive, dict):
+                    world_match = world_positive.get("name")
+        elif catalog.get("status") == "unverified":
+            catalog_status = "unverified"
+        else:
+            catalog_status = "unavailable"
+    return {
+        "database_type": "CATA",
+        "database_type_label": "Catalogue",
+        "database_type_code": 2,
+        "database_name": candidate["full_database_name"],
+        "database_name_status": current_name_status,
+        "project_catalog_status": catalog_status,
+        "project_catalog_name_match": catalog_match,
+        "world_catalog_name_match": world_match,
+        "root_name": "/" + normalized["root_name"] if "root_name" in normalized else None,
+        "root_name_source": "caller" if "root_name" in normalized else "admin_form",
+        "root_collision_status": "not_checked_until_catalogue_root_is_visible",
+        "admin_execution_status": "manual_admin_configuration_required",
+        "scope": {
+            "current_mdb_name_only": True,
+            "catalogue_root_not_created": True,
+            "project_wide_uniqueness_verified": False,
+            "admin_permission_verified": False,
+        },
+    }
+
+
 def _post_create_verification(candidate: dict[str, Any]) -> dict[str, Any]:
     normalized = candidate["normalized_input"]
     root_name = "/" + normalized["root_name"] if "root_name" in normalized else "<name entered in ADMIN>"
@@ -158,6 +226,7 @@ def _post_create_verification(candidate: dict[str, Any]) -> dict[str, Any]:
         "fresh_context_required": True,
         "expected_database_name": candidate["full_database_name"],
         "expected_database_type": "Catalogue",
+        "expected_database_type_code": 2,
         "expected_root_name": root_name,
         "steps": [
             {
@@ -175,11 +244,17 @@ def _post_create_verification(candidate: dict[str, Any]) -> dict[str, Any]:
                 "arguments": {"refno": root_name, "max_depth": 1, "limit": 1, "attributes": []},
                 "check": "Match row 0 to the expected NAME, native CATA element type and Catalogue storage. Compare the returned DBREF with the intended database.",
             },
+            {
+                "tool": "e3d_paragon_catalogue_schema",
+                "arguments": {"refno": root_name, "attributes": [], "include_constraints": False},
+                "check": "Confirm the root resolves in Catalogue storage, retains native CATA identity and exposes the expected PARAGON child-type surface before creating SECT/CATE/SCOM members.",
+            },
         ],
         "completion_requires": [
-            "All three fresh reads identify the same session, project and MDB context.",
+            "All four fresh reads identify the same session, project and MDB context.",
             "The typed database owner is " + normalized["team"] + " and the database type is Catalogue.",
             "The requested CATA element is observed by name and its database identity agrees with the intended Catalogue database.",
+            "The root schema resolves in Catalogue storage; child creation remains a separate planned operation.",
         ],
         "project_wide_uniqueness_verified": False,
         "database_created_by_this_request_verified": False,
@@ -361,6 +436,9 @@ def _database_preflight_identity_snapshot(bridge: BridgeClient, candidate: dict[
                 continue
             count = result["conflicts"][field + "_match_count"]
             result["conflicts"][field + "_in_current_mdb"] = True if count else False if result["complete"] else None
+    if candidate["normalized_input"]["database_type"] == "CATA":
+        result["catalogue_preflight"] = _catalogue_preflight(
+            candidate, include_project_catalog=include_project_catalog, result=result)
     return {"ok": True, "version": version, "result": result}
 
 
@@ -385,6 +463,7 @@ def database_preflight(bridge: BridgeClient, args: dict[str, Any]) -> dict[str, 
                       "database_number_match_count": 0, "matches_truncated": False},
         "project_uniqueness": {"name": None, "database_number": None},
         "team_exists": None, "area_available": None, "admin_context_verified": None,
+        "catalogue_preflight": None,
         "mcp_commands_enabled": bridge.settings.allow_commands,
         "blockers": ["execution_not_supported", "admin_context_unverified", "project_catalog_unavailable",
                      "team_existence_unverified", "area_availability_unverified"],

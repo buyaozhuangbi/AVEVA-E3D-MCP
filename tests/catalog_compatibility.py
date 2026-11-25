@@ -76,9 +76,7 @@ _MODELING_DESCRIPTION_EDITS = {
     "e3d_piping_route_plan": (
         ("Returns a proposed ordered create_element/set_attributes dry-run sequence only; every revision is null and no "
          "create/set preview or write is called.",
-         "Returns a proposed ordered create_element/set_attributes dry-run sequence. Set include_native_previews=true "
-         "to request exact create dry_run receipts and revisions for currently existing root children; descendants of planned "
-         "new parents and post-create attribute setters stay deferred. No model write is issued."),
+         "Returns a proposed ordered create_element/set_attributes dry-run sequence. BRAN rows and implicit TUBI aliases are retained as structural evidence; P-points are read from component anchors. Set include_native_previews=true to request exact create dry_run receipts and revisions for currently existing root children. Partial connectivity evidence does not erase an independent root-level dry_run; descendants of planned new parents and post-create attribute setters stay deferred. No model write is issued."),
     ),
 }
 

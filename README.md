@@ -28,7 +28,7 @@
 
 - **层级与搜索**：`e3d_query`、`e3d_element_snapshot`、`e3d_list_members`、`e3d_find_descendants` 查询引用、读取树形结构、分页浏览直接成员或在明确根下搜索。
 - **属性与类型**：`e3d_read_attributes` 和 `e3d_read_attributes_batch` 读取格式化与类型化属性。`e3d_element_schema`、`e3d_validate_model` 检查合法子类型、属性元数据和已发布的尺寸规则。`e3d_element_access` 读取当前 session 和指定目标的访问、锁及 claim 观察。
-- **数据库身份**：`e3d_database_state`、`e3d_database_identity_snapshot` 读取当前 MDB 的数据库和身份清单。`e3d_team_database_identity_manifest` 观察 TEAM、DBLI、DB 及其类型化 owner 关系。`e3d_database_preflight` 对 DESI/CATA 生成非执行候选并检查当前 MDB 的名称和 DBNO 冲突，可为 CATA 指定根名并生成 `WITH CATA` ADMIN handoff。建库后核验见[说明](docs/paragon-database-creation.md)。
+- **数据库身份**：`e3d_database_state`、`e3d_database_identity_snapshot` 读取当前 MDB 的数据库和身份清单。`e3d_team_database_identity_manifest` 观察 TEAM、DBLI、DB 及其类型化 owner 关系。`e3d_database_preflight` 对 DESI/CATA 生成非执行候选并检查当前 MDB 的名称和 DBNO 冲突，可为 CATA 指定根名并生成 `WITH CATA` ADMIN handoff；CATA 结果还给出类型码、根名来源和根元素尚未可见前的明确未知状态。建库后核验见[说明](docs/paragon-database-creation.md)。
 - **设备和管道清单**：`e3d_equipment_manifest` 读取 EQUI 下有界成员树，`e3d_pipe_member_manifest` 读取 PIPE/BRAN 成员，`e3d_piping_branch_state` 读取 BRAN 属性、规格、服务信息和直接成员。
 - **空间和批量测量**：`e3d_spatial_info` 与 `e3d_transform_coordinates` 在明确坐标系下读取或转换坐标。`e3d_measure_elements_batch` 批量读取空间位置、原生 bounds 和体积。`e3d_database_state` 的完整性仅指当前 MDB 观察范围，不代表项目范围内完整目录。
 
@@ -102,7 +102,7 @@
 ### v0.2.1
 
 - **直接新建 SCOM**。`e3d_paragon_component_create` 在现有 CATE 下新建元件，引用现有 PTSE 和 GMSE，并写入完整数值 `PARAM` 数组。执行后回读新 REF、归属、`PTREF`、`GMREF` 和参数。使用 `e3d_paragon_component_create_status` 查询原请求回执。[直接新建 SCOM](docs/paragon-component-create.md)
-- **CATA 建库交接**。`e3d_database_preflight` 提供 ADMIN 表单字段、`WITH CATA` 根元素命令模板及建库后的三步只读核验，覆盖当前 MDB 中的库身份、TEAM 归属和 Catalogue 根。[建库操作手册](docs/paragon-database-creation.md)
+- **CATA 建库交接**。`e3d_database_preflight` 提供 ADMIN 表单字段、`WITH CATA` 根元素命令模板及建库后的四步只读核验，覆盖当前 MDB 中的库身份、TEAM 归属、Catalogue 根和根 Schema。[建库操作手册](docs/paragon-database-creation.md)
 
 [查看 v0.2.1 源码](https://github.com/buyaozhuangbi/AVEVA-E3D-MCP/tree/v0.2.1) · [查看 v0.2.0 至 v0.2.1 的变更](https://github.com/buyaozhuangbi/AVEVA-E3D-MCP/compare/v0.2.0...v0.2.1)
 

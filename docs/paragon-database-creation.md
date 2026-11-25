@@ -21,6 +21,8 @@
 
 `root_name` 是可选的 Catalogue 根名称，不含开头斜线。填写后，`candidate_command` 和 ADMIN handoff 会带入 `WITH CATA /PARAGON_ROOT`。省略时结果保留根名占位符，用户可在 ADMIN 中选择名称。两种方式都只生成非执行候选。
 
+结果中的 `catalogue_preflight` 固定记录 Catalogue 类型码 `2`、根名来源、当前 MDB 名称冲突状态和目录探针状态。`root_collision_status` 在数据库和根元素尚未可见前保持 `not_checked_until_catalogue_root_is_visible`；这避免把数据库名称检查误当成根元素唯一性检查。
+
 先检查 preflight 的 `complete`、当前 MDB 名称和数据库冲突。`name_in_current_mdb=false` 仅表示完整扫描时当前 MDB 未观察到同名项，不代表项目范围内唯一。团队是否存在、目录是否可用、权限和项目级 DBNO 唯一性仍需在 ADMIN 中确认。
 
 打开 E3D ADMIN 的 **Database > Create**，按 `admin_handoff` 填写：
@@ -44,7 +46,8 @@ ADMIN 创建的 CATA 数据库及根元素与后续 PARAGON 元件生成是分�
 1. `e3d_database_state` 从当前 MDB 读取新库名称、类型和数据库号。若首个 200 项页面有后续页，使用返回的 `next_offset` 和 `context_id` 继续。
 2. 将新读到的 `context_id` 传给 `e3d_team_database_identity_manifest`，检查 DB → DBLI → TEAM 的归属链，并将当前 MDB 中的候选身份与步骤 1 的数据库清单对照。候选身份的等价性仍待确认。
 3. 将 ADMIN 中填写的完整 `/NAME` 传给 `e3d_paragon_catalogue_manifest`。核对第 0 行的名称、`CATA` 元素类型和 Catalogue 存储类型，并用返回的 DBREF 核对目标数据库的归属。
+4. 将同一 `/NAME` 传给 `e3d_paragon_catalogue_schema`，核对根元素仍为 Catalogue/CATA，并记录可用的 PARAGON 子类型。该步骤只提供创建 SECT/CATE/SCOM 前的 Schema 观察，不执行目录成员创建。
 
-三项是分开的 SDK 读取，不构成数据库锁或一个原子快照。完整核验要求它们观察到相同 session、project 和 MDB；部分或截断的读取保留为未知。该流程只能证明数据库和根在当前 MDB 中可见，不能证明项目范围内唯一、Admin 权限、磁盘备份、未来可写或本次请求创建了该数据库。
+四项是分开的 SDK 读取，不构成数据库锁或一个原子快照。完整核验要求它们观察到相同 session、project 和 MDB；部分或截断的读取保留为未知。该流程只能证明数据库、根和当前 Schema 在当前 MDB 中可见，不能证明项目范围内唯一、Admin 权限、磁盘备份、未来可写或本次请求创建了该数据库。
 
 如果已安装的 E3D Addin 无法连接，先恢复 bridge 连接；不要据此重发建库命令。当前实现没有建库执行、重试、回滚或删除接口。

@@ -234,6 +234,22 @@ def test_optional_native_previews_bind_exact_root_children_and_defer_uncreated_t
     assert previews["preview_context"]["boundary_agreement"] is True
 
 
+def test_partial_connectivity_evidence_does_not_block_independent_root_create_preview():
+    def make_trace_partial(kind, reply):
+        if kind == "connection_trace":
+            reply["result"]["complete"] = False
+    response, calls = observed_plan(args={**COMPLETE_ARGS, "include_native_previews": True},
+                                    previews=create_preview, mutate_source=make_trace_partial)
+    result = response["result"]
+    assert result["complete"] is False
+    assert result["structural_read_complete"] is True
+    assert result["connectivity_evidence_complete"] is False
+    assert result["native_previews"]["status"] == "partial_or_unknown"
+    assert result["native_previews"]["prepared_count"] == 2
+    assert result["write_sequence"][0]["expected_revision"] == "a" * 64
+    assert calls[5].call_count == 2
+
+
 def test_native_fault_during_optional_preview_stops_without_followup_context_or_create_reads():
     fault = BridgeError("native database fault", diagnostics={"native_fault_latched": True})
     response, calls = observed_plan(args={**COMPLETE_ARGS, "include_native_previews": True}, previews=[fault])
@@ -433,10 +449,10 @@ def test_plan_reads_manifest_branch_points_trace_and_schema_then_returns_null_re
     assert result["status"] == "partial_or_unknown"
     assert len(result["explicit_members"]) == 3
     assert [row["requested_refno"] for row in result["sources"]["branch_states"]] == ["=1/2"]
-    assert [row["expected_type"] for row in result["sources"]["connection_points"]] == ["BRAN", "TUBI"]
+    assert [row["expected_type"] for row in result["sources"]["connection_points"]] == ["TUBI"]
     assert result["endpoints"][0]["binding"]["matches_enclosing_context"] is True
     trace_starts = [start for row in result["sources"]["connection_trace"] for start in row["starts"]]
-    assert len(trace_starts) == 3
+    assert len(trace_starts) == 2
     assert {row["expected_type"] for row in result["sources"]["schemas"]} == {"PIPE", "BRAN", "TUBI"}
     assert {row["status"] for row in result["property_candidates"]} == {"candidate", "not_direct_edit_supported"}
     assert {row["observed_status"] for row in result["property_candidates"]} == {"candidate", "not_direct_edit_supported"}
@@ -607,7 +623,7 @@ def test_tool_definition_is_bounded_read_only_and_contains_no_execution_switch()
 
 
 def test_automatic_point_overflow_is_reported_and_incomplete():
-    many_points = connection_points("=1/2", "BRAN")
+    many_points = connection_points("=1/3", "TUBI")
     many_points["result"]["points"] = [{"number": index, "available": True}
                                         for index in range(1, 66)]
     bridge = BridgeClient(SETTINGS)
@@ -615,11 +631,11 @@ def test_automatic_point_overflow_is_reported_and_incomplete():
          patch("aveva_e3d_mcp.piping_route_plan.pipe_member_manifest", return_value=member_manifest()), \
          patch("aveva_e3d_mcp.piping_route_plan.piping_branch_state", return_value=branch_state()), \
          patch.object(BridgeClient, "connection_points", side_effect=lambda refno, _wrt, _points, **kw:
-                      many_points if refno == "=1/2" else connection_points(refno, kw["expected_type"])), \
+                      many_points if refno == "=1/3" else connection_points(refno, kw["expected_type"])), \
          patch.object(BridgeClient, "trace_connection_network", side_effect=trace_reply), \
          patch.object(BridgeClient, "element_schema", side_effect=lambda refno, names, _offset, _limit,
                       expected_type="": schema(refno, expected_type, names)):
         result = piping_route_plan(bridge, ARGS)["result"]
-    assert result["trace_scope"] == {"limit": 64, "omitted_automatic_starts": 2, "complete": False}
+    assert result["trace_scope"] == {"limit": 64, "omitted_automatic_starts": 1, "complete": False}
     assert result["complete"] is False
     assert any(item["code"] == "trace_start_limit" for item in result["read_errors"])

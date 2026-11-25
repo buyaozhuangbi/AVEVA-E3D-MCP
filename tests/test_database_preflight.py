@@ -222,10 +222,27 @@ class DatabasePreflightTests(unittest.TestCase):
         self.assertIsNone(handoff["admin_context_verified"])
         self.assertIsNone(handoff["permission_verified"])
         self.assertIs(handoff["execution_performed"], False)
+        self.assertEqual(handoff["database_type_code"], 2)
+        self.assertEqual(handoff["root_creation"], {
+            "mode": "admin_initial_element", "element_type": "CATA", "storage_type": "Catalogue",
+            "created_by_admin": True, "root_name_required_before_apply": True,
+        })
         self.assertEqual(result["post_create_verification"]["status"], "instructions_only")
         self.assertEqual([step["tool"] for step in result["post_create_verification"]["steps"]], [
             "e3d_database_state", "e3d_team_database_identity_manifest", "e3d_paragon_catalogue_manifest",
+            "e3d_paragon_catalogue_schema",
         ])
+        self.assertEqual(result["post_create_verification"]["expected_database_type_code"], 2)
+        self.assertEqual(result["catalogue_preflight"], {
+            "database_type": "CATA", "database_type_label": "Catalogue", "database_type_code": 2,
+            "database_name": "CATALOGUE/FITTINGS", "database_name_status": "no_observed_current_mdb_collision",
+            "project_catalog_status": "not_requested", "project_catalog_name_match": None,
+            "world_catalog_name_match": None, "root_name": None, "root_name_source": "admin_form",
+            "root_collision_status": "not_checked_until_catalogue_root_is_visible",
+            "admin_execution_status": "manual_admin_configuration_required",
+            "scope": {"current_mdb_name_only": True, "catalogue_root_not_created": True,
+                      "project_wide_uniqueness_verified": False, "admin_permission_verified": False},
+        })
         self.assertFalse(result["post_create_verification"]["project_wide_uniqueness_verified"])
         self.assertFalse(result["post_create_verification"]["database_created_by_this_request_verified"])
 
