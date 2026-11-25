@@ -64,6 +64,36 @@ OPTIONAL_IDENTITY_FIELDS = {
     },
 }
 
+PIPING_CENTERLINE_SCHEMA = {
+    "type": "object", "description": "Optional analytic WORLD centreline using two existing endpoint indices. "
+        "Radius, minimum straight, tolerances and tangent/PDIR senses are explicit caller choices. "
+        "The centreline does not populate or verify planned_members and is not a native create preview.",
+    "properties": {
+        "start_endpoint_index": {"type": "integer", "minimum": 0, "maximum": 15},
+        "end_endpoint_index": {"type": "integer", "minimum": 0, "maximum": 15},
+        "waypoints_world_mm": {"type": "array", "maxItems": 32, "items": {
+            "type": "array", "minItems": 3, "maxItems": 3, "items": {
+                "type": "number", "minimum": -1000000000, "maximum": 1000000000}}},
+        "bend_radius_mm": {"type": "number", "minimum": 0.000001, "maximum": 1000000},
+        "minimum_straight_mm": {"type": "number", "minimum": 0, "maximum": 1000000},
+        "position_tolerance_mm": {"type": "number", "minimum": 0.000001, "maximum": 1000},
+        "direction_tolerance_degrees": {"type": "number", "minimum": 0, "maximum": 90},
+        "start_direction_sense": {"type": "integer", "enum": [-1, 1],
+            "description": "Required start-to-end travel tangent: 1 along native start PDIR, -1 opposed."},
+        "end_direction_sense": {"type": "integer", "enum": [-1, 1],
+            "description": "Required start-to-end arrival tangent: 1 along native end PDIR, -1 opposed."},
+    }, "required": ["bend_radius_mm", "direction_tolerance_degrees", "end_direction_sense", "end_endpoint_index",
+                    "minimum_straight_mm", "position_tolerance_mm", "start_direction_sense", "start_endpoint_index", "waypoints_world_mm"],
+    "additionalProperties": False,
+}
+
+PIPING_CENTERLINE_DESCRIPTION = (
+    " Optional centerline computes WORLD straight runs and circular bend tangencies from two bound endpoint P-points "
+    "and explicit waypoints, radius, minimum straight, tolerances and PDIR senses. planned_members may be empty only "
+    "with centerline. Inspect centerline_plan.geometric_fit separately from read completeness. This does not populate "
+    "or verify planned_members, select catalogue parts or execute routing."
+)
+
 POST_0_2_1_PARAGON_TOOLS = {
     "e3d_paragon_reference_trace", "e3d_paragon_component_copy", "e3d_paragon_component_copy_status",
     "e3d_paragon_component_parameters_set", "e3d_paragon_component_parameters_status",
@@ -108,6 +138,11 @@ def with_modeling_additions(historical):
                 properties["database_type"]["description"] = (
                     "DESI is Design; CATA is the Catalogue database type. Optional root_name adds a CATA root through WITH CATA /NAME."
                 )
+    if name == "e3d_piping_route_plan" and "centerline" not in updated["inputSchema"]["properties"]:
+        updated["inputSchema"]["properties"]["centerline"] = deepcopy(PIPING_CENTERLINE_SCHEMA)
+        updated["inputSchema"]["properties"]["planned_members"]["minItems"] = 0
+        updated["inputSchema"]["anyOf"] = [{"required": ["centerline"]}, {"properties": {"planned_members": {"minItems": 1}}}]
+        updated["description"] += PIPING_CENTERLINE_DESCRIPTION
     identity = OPTIONAL_IDENTITY_FIELDS.get(name)
     if identity:
         updated["inputSchema"]["properties"]["limit"].update(identity["property_updates"]["limit"])

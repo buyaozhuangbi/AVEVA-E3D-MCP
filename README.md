@@ -50,6 +50,7 @@
 - `e3d_connection_points` 读取明确元素的 PPLS/PPOS/PDIR 等原生连接点，`e3d_check_connection_pair` 对一对显式 P-point 进行 SDK 位置和方向观察。
 - `e3d_piping_connectivity_snapshot` 在一次 UI 回调中组合有界 BRAN 状态、P-point 配对及有向 PCREF 追踪。`e3d_trace_piping_connectivity` 对显式起点读取有向 PCREF 链。
 - `e3d_piping_specification_read` 读取规格引用的原生格式化和类型化字段。`e3d_piping_route_plan` 用成员、BRAN、连接点和 Schema 证据生成建模顺序。设置 `include_native_previews=true` 后，可为现有 PIPE 或 BRAN 下的计划直接子项取得原生创建预览。依赖新建父级或新元件属性的步骤，等拿到实际 DBREF 后再预览。
+- **中心线与弯头空间规划**：`e3d_piping_route_plan` 的可选 `centerline` 从两个显式原生 P-point 和最多 32 个 WORLD 路径点计算直段长度、圆弧弯头切点、圆心、法向、转角及总长。调用方指定半径、最小直段、容差和端点 PDIR 方向关系；工具报告短段、折返、弯头切向长度重叠及端点方向不符。可传 `planned_members: []` 单独规划路径。读取完整性与 `centerline_plan.geometric_fit` 分别报告。[输入示例与结果说明](docs/piping-centerline-planning.md)
 
 创建同一父级下的多个计划项时，每个 revision 都针对当前观测到的父级成员状态。成功创建会改变该状态；执行一步后，先刷新计划，再执行剩余同级项。
 

@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from aveva_e3d_mcp.bridge import BridgeClient, BridgeError
 from aveva_e3d_mcp.config import Settings
 from aveva_e3d_mcp.piping_route_plan import TOOL, _member_specs, _write_sequence, piping_route_plan, register_piping_route_plan
-from aveva_e3d_mcp.protocol import McpServer
+from aveva_e3d_mcp.protocol import McpServer, _schema_matches
 
 
 SETTINGS = Settings(mode="bridge", version="E3D21", allow_commands=False)
@@ -615,11 +615,101 @@ def test_tool_definition_is_bounded_read_only_and_contains_no_execution_switch()
     tool = server._dispatch({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}})["result"]["tools"][0]
     assert tool["name"] == TOOL
     assert tool["annotations"]["readOnlyHint"] is True
-    assert set(tool["inputSchema"]["properties"]) == {"root_refno", "planned_members", "endpoints", "max_depth", "member_limit", "include_native_previews"}
+    assert set(tool["inputSchema"]["properties"]) == {"root_refno", "planned_members", "endpoints", "max_depth", "member_limit", "include_native_previews", "centerline"}
     assert "dry_run" not in tool["inputSchema"]["properties"]
     assert "expected_revision" not in tool["inputSchema"]["properties"]
     assert tool["inputSchema"]["properties"]["include_native_previews"]["default"] is False
     assert tool["inputSchema"]["additionalProperties"] is False
+    assert _schema_matches(centerline_args(), tool["inputSchema"]) is True
+    assert _schema_matches({**ARGS, "planned_members": []}, tool["inputSchema"]) is False
+
+
+def centerline_args():
+    return {"root_refno": "=1/1", "planned_members": [], "endpoints": [
+        {"refno": "=1/9", "expected_type": "NOZZ", "point_number": 4},
+        {"refno": "=1/8", "expected_type": "NOZZ", "point_number": 1}],
+        "centerline": {"start_endpoint_index": 0, "end_endpoint_index": 1,
+            "waypoints_world_mm": [[1000, 0, 0]], "bend_radius_mm": 100, "minimum_straight_mm": 50,
+            "position_tolerance_mm": 0.01, "direction_tolerance_degrees": 0.1,
+            "start_direction_sense": 1, "end_direction_sense": -1}}
+
+
+def add_centerline_point_evidence(kind, reply):
+    native = reply.get("result", {})
+    refno = native.get("element", {}).get("refno")
+    if kind not in {"endpoint", "connection_points"} or refno not in {"=1/9", "=1/8"}:
+        return
+    first = refno == "=1/9"
+    point = native["points"][0]
+    point.update(exists={"attribute": "PPEXST", "available": True, "value": True},
+        position={"attribute": "PPOS", "available": True, "unit": "mm", "x": 0 if first else 1000,
+                  "y": 0 if first else 1000, "z": 0},
+        direction={"attribute": "PDIR", "available": True, "x": 1 if first else 0, "y": 0 if first else -1, "z": 0})
+    native.update(success=True, frame={"requested": "WORLD", "type": "WORL"})
+
+
+def test_optional_centerline_only_plan_reuses_bound_native_endpoint_reads_without_edits():
+    response, calls = observed_plan(args=centerline_args(), mutate_source=add_centerline_point_evidence)
+    result = response["result"]
+    assert result["complete"] is True
+    assert result["centerline_plan"]["geometric_fit"] is True
+    assert result["write_sequence"] == result["planned_members"] == []
+    assert calls[2].call_count == 3  # one existing member and the two explicit endpoints
+    for call in calls[5:]:
+        call.assert_not_called()
+
+
+def test_centerline_space_failure_is_separate_from_complete_native_observations():
+    args = centerline_args()
+    args["centerline"]["bend_radius_mm"] = 1100
+    response, _ = observed_plan(args=args, mutate_source=add_centerline_point_evidence)
+    result = response["result"]
+    assert result["complete"] is True
+    assert result["centerline_plan"]["complete"] is True
+    assert result["centerline_plan"]["geometric_fit"] is False
+    assert result["centerline_plan"]["elements"] == []
+
+
+def test_geometry_only_plan_has_no_native_edit_preview_to_prepare():
+    response, calls = observed_plan(args={**centerline_args(), "include_native_previews": True},
+                                    mutate_source=add_centerline_point_evidence)
+    assert response["result"]["native_previews"]["status"] == "not_applicable"
+    assert response["result"]["centerline_plan"]["execution_prepared"] is False
+    calls[5].assert_not_called()
+
+
+def test_centerline_retains_unknown_when_context_changes():
+    response, _ = observed_plan(args=centerline_args(), mutate_source=add_centerline_point_evidence,
+                                after=context("different_session"))
+    assert response["result"]["complete"] is False
+    centerline = response["result"]["centerline_plan"]
+    assert centerline["available"] is centerline["complete"] is False
+    assert centerline["geometric_fit"] is None
+    assert centerline["elements"] == []
+
+
+def test_centerline_evidence_failure_does_not_claim_complete_plan():
+    response, _ = observed_plan(args=centerline_args())
+    assert response["result"]["structural_read_complete"] is True
+    assert response["result"]["complete"] is False
+    assert response["result"]["centerline_plan"]["geometric_fit"] is None
+
+
+@pytest.mark.parametrize("field,value", [("bend_radius_mm", 0), ("end_endpoint_index", 8),
+    ("waypoints_world_mm", [[0, 0, float("inf")]]), ("start_direction_sense", True)])
+def test_invalid_centerline_fails_before_any_native_read(field, value):
+    args = centerline_args()
+    args["centerline"][field] = value
+    with patch("aveva_e3d_mcp.piping_route_plan.context_snapshot") as read:
+        with pytest.raises(ValueError):
+            piping_route_plan(BridgeClient(SETTINGS), args)
+    read.assert_not_called()
+
+
+def test_existing_plan_has_no_centerline_output_or_changed_read_sequence_by_default():
+    response, calls = observed_plan(args=COMPLETE_ARGS)
+    assert "centerline_plan" not in response["result"]
+    assert calls[2].call_count == 2
 
 
 def test_automatic_point_overflow_is_reported_and_incomplete():

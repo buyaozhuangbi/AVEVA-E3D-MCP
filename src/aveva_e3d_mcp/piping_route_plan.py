@@ -9,6 +9,7 @@ from .branch_snapshot import piping_branch_state
 from .bridge import BridgeClient, BridgeError, element_access_refnos, normalize_expected_element_type
 from .context_snapshot import context_snapshot
 from .pipe_member_manifest import pipe_member_manifest
+from .piping_centerline import centerline_options, centerline_schema, plan_centerline
 from .model_plan_preview import model_edit_preview
 from .protocol import McpServer
 
@@ -44,9 +45,10 @@ def _finite_vector(value: Any, field: str) -> list[float | int]:
     return list(value)
 
 
-def _member_specs(raw: Any, root_refno: str) -> list[dict[str, Any]]:
-    if not isinstance(raw, list) or not 1 <= len(raw) <= MAX_PLANNED_MEMBERS:
-        raise ValueError(f"planned_members must contain 1 to {MAX_PLANNED_MEMBERS} members")
+def _member_specs(raw: Any, root_refno: str, *, allow_empty: bool = False) -> list[dict[str, Any]]:
+    minimum = 0 if allow_empty else 1
+    if not isinstance(raw, list) or not minimum <= len(raw) <= MAX_PLANNED_MEMBERS:
+        raise ValueError(f"planned_members must contain {minimum} to {MAX_PLANNED_MEMBERS} members")
     members: list[dict[str, Any]] = []
     requested_attributes: set[str] = set()
     sibling_names: dict[int | None, set[str]] = {}
@@ -336,14 +338,15 @@ def _write_sequence(root_refno: str, members: list[dict[str, Any]]) -> list[dict
 
 
 def piping_route_plan(bridge: BridgeClient, args: dict[str, Any]) -> dict[str, Any]:
-    if not isinstance(args, dict) or set(args) - {"root_refno", "planned_members", "endpoints", "max_depth", "member_limit", "include_native_previews"}:
-        raise ValueError("Only root_refno, planned_members, endpoints, max_depth, member_limit and include_native_previews are accepted")
+    if not isinstance(args, dict) or set(args) - {"root_refno", "planned_members", "endpoints", "max_depth", "member_limit", "include_native_previews", "centerline"}:
+        raise ValueError("Only root_refno, planned_members, endpoints, max_depth, member_limit, include_native_previews and centerline are accepted")
     include_native_previews = args.get("include_native_previews", False)
     if type(include_native_previews) is not bool:
         raise ValueError("include_native_previews must be a boolean")
     root_refno = _explicit_ref(args.get("root_refno"), "root_refno")
-    members = _member_specs(args.get("planned_members"), root_refno)
     endpoints = _endpoints(args.get("endpoints"))
+    centerline = centerline_options(args["centerline"], len(endpoints)) if "centerline" in args else None
+    members = _member_specs(args.get("planned_members"), root_refno, allow_empty=centerline is not None)
     max_depth = args.get("max_depth", 8)
     member_limit = args.get("member_limit", 16)
     if type(max_depth) is not int or not 1 <= max_depth <= 16:
@@ -375,6 +378,8 @@ def piping_route_plan(bridge: BridgeClient, args: dict[str, Any]) -> dict[str, A
                  "By default no create/set-attribute preview is issued. Optional native previews are dry_run only; no model write, command, CE switch, view change or capture is issued.",
     }
     envelope = {"ok": True, "version": version, "result": result}
+    if centerline is not None:
+        result["centerline_plan"] = plan_centerline(centerline, [])
 
     def error(stage: str, exc: Any, code: str = "read_error") -> None:
         result["read_errors"].append({"stage": stage, "code": code, "message": str(exc)[:1024]})
@@ -666,14 +671,20 @@ def piping_route_plan(bridge: BridgeClient, args: dict[str, Any]) -> dict[str, A
         all(_response_ok(row.get("response")) and row["response"]["result"].get("complete") is True
             for row in result["sources"]["connection_trace"])
     )
-    read_complete = structural_sources_complete and connectivity_complete and names_clear
+    centerline_complete = True
+    if centerline is not None:
+        result["centerline_plan"] = plan_centerline(centerline, result["endpoints"])
+        centerline_complete = result["centerline_plan"]["complete"]
+    read_complete = structural_sources_complete and connectivity_complete and names_clear and centerline_complete
     result["structural_read_complete"] = structural_sources_complete
     result["connectivity_evidence_complete"] = connectivity_complete
     result["available"] = isinstance(manifest_result, dict) and manifest_result.get("available") is True
     result["complete"] = result["success"] = bool(read_complete)
     result["status"] = "complete_observation" if read_complete else "partial_or_unknown"
     if include_native_previews:
-        if structural_sources_complete:
+        if not result["write_sequence"]:
+            result["native_previews"].update(status="not_applicable", complete=True)
+        elif structural_sources_complete:
             _prepare_native_previews(bridge, result, manifest_result["root"], after)
         else:
             result["native_previews"]["status"] = "skipped_incomplete_structural_observation"
@@ -740,11 +751,12 @@ def register_piping_route_plan(server: McpServer, bridge: BridgeClient) -> None:
         "actual typed member P-points, optional explicit endpoint P-points and PCREF traces, and schema candidates for existing same-type elements. "
         "Returns a proposed ordered create_element/set_attributes dry-run sequence. BRAN rows and implicit TUBI aliases are retained as structural evidence; P-points are read from component anchors. Set include_native_previews=true to request exact create dry_run receipts and revisions for currently existing root children. Partial connectivity evidence does not erase an independent root-level dry_run; descendants of planned new parents and post-create attribute setters stay deferred. No model write is issued. "
         "Cross-request reads are live, non-atomic observations; missing or changed session/project/MDB/CE context remains unknown. "
-        "Schema and connection evidence do not validate proposed values, geometry, routing, catalogue compatibility or engineering suitability.",
+        "Schema and connection evidence do not validate proposed values, geometry, routing, catalogue compatibility or engineering suitability. "
+        "Optional centerline computes WORLD straight runs and circular bend tangencies from two bound endpoint P-points and explicit waypoints, radius, minimum straight, tolerances and PDIR senses. planned_members may be empty only with centerline. Inspect centerline_plan.geometric_fit separately from read completeness. This does not populate or verify planned_members, select catalogue parts or execute routing.",
         {"type": "object", "properties": {
             "root_refno": {"type": "string", "minLength": 2, "maxLength": 256,
                              "description": "One explicit Design PIPE or BRAN /NAME or =database/element."},
-            "planned_members": {"type": "array", "minItems": 1, "maxItems": MAX_PLANNED_MEMBERS,
+            "planned_members": {"type": "array", "minItems": 0, "maxItems": MAX_PLANNED_MEMBERS,
                 "items": {"type": "object", "properties": {
                     "element_type": {"type": "string", "minLength": 1, "maxLength": 64},
                     "name": {"type": "string", "minLength": 2, "maxLength": 50},
@@ -770,6 +782,8 @@ def register_piping_route_plan(server: McpServer, bridge: BridgeClient) -> None:
             "member_limit": {"type": "integer", "minimum": 1, "maximum": MAX_MANIFEST_MEMBERS, "default": 16},
             "include_native_previews": {"type": "boolean", "default": False,
                 "description": "Request exact create dry_run previews for planned direct children of the observed root. No model edits are performed; planned descendants remain deferred."},
-        }, "required": ["root_refno", "planned_members"], "additionalProperties": False},
+            "centerline": centerline_schema(),
+        }, "required": ["root_refno", "planned_members"], "additionalProperties": False,
+            "anyOf": [{"required": ["centerline"]}, {"properties": {"planned_members": {"minItems": 1}}}]},
         lambda args: piping_route_plan(bridge, args), read_only=True,
     )
