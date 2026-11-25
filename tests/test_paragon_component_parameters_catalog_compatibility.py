@@ -16,7 +16,7 @@ from catalog_compatibility import with_modeling_additions
 
 BASELINE = ROOT / "tests/fixtures/paragon_component_parameters_catalog117.json"
 BASELINE_SHA256 = "d9cb586289dc584e05b6ad84379cdb9b05b7096abffb9d6aadddc14c8e9fb04e"
-ADDED = {"e3d_paragon_component_parameters_set", "e3d_paragon_component_parameters_status", "e3d_paragon_generate_from_standard", "e3d_paragon_component_create", "e3d_paragon_component_create_status", "e3d_piping_route_create", "e3d_piping_route_verify"}
+ADDED = {"e3d_paragon_component_parameters_set", "e3d_paragon_component_parameters_status", "e3d_paragon_generate_from_standard", "e3d_paragon_component_create", "e3d_paragon_component_create_status", "e3d_piping_route_create", "e3d_piping_route_verify", "e3d_modeling_team_plan", "e3d_modeling_team_execute"}
 
 
 class ParagonComponentParametersCatalogCompatibilityTests(unittest.TestCase):
@@ -31,8 +31,8 @@ class ParagonComponentParametersCatalogCompatibilityTests(unittest.TestCase):
         after = {tool["name"]: tool for tool in current}
         self.assertEqual(len(baseline), 117)
         self.assertEqual(len(before), 117)
-        self.assertEqual(len(current), 124)
-        self.assertEqual(len(after), 124)
+        self.assertEqual(len(current), 126)
+        self.assertEqual(len(after), 126)
         self.assertEqual(set(after) - set(before), ADDED)
         self.assertEqual(set(before) - set(after), set())
         for name, definition in before.items():

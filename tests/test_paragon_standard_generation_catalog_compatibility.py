@@ -21,8 +21,8 @@ def test_release_version_and_additive_tool_catalog():
     reply = server._dispatch({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
     current = {row["name"]: row for row in reply["result"]["tools"]}
     assert len(old) == 119
-    assert len(reply["result"]["tools"]) == len(current) == 124
-    assert set(current) - set(old) == {"e3d_paragon_generate_from_standard", "e3d_paragon_component_create", "e3d_paragon_component_create_status", "e3d_piping_route_create", "e3d_piping_route_verify"}
+    assert len(reply["result"]["tools"]) == len(current) == 126
+    assert set(current) - set(old) == {"e3d_paragon_generate_from_standard", "e3d_paragon_component_create", "e3d_paragon_component_create_status", "e3d_piping_route_create", "e3d_piping_route_verify", "e3d_modeling_team_plan", "e3d_modeling_team_execute"}
     assert {name: current[name] for name in old} == {name: with_modeling_additions(row) for name, row in old.items()}
     package = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    assert package["project"]["version"] == server.version == __version__ == "0.2.2"
+    assert package["project"]["version"] == server.version == __version__ == "0.2.3"

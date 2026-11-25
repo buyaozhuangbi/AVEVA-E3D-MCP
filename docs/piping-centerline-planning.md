@@ -2,7 +2,7 @@
 
 `e3d_piping_route_plan` 的可选 `centerline` 把两个原生 P-point 和调用方提供的 WORLD 路径点连接成直段与圆弧弯头。它复用本次计划已读取的端点，核对 session/build/project/MDB/CE 绑定、WORLD 坐标系、PPEXST、毫米 PPOS 和单位 PDIR。
 
-这项能力在 Python MCP 侧计算，使用已有 Addin 的连接点读取接口，无需部署新的 DLL。公开工具现为 124 个，版本维持 0.2.2；其中 `e3d_piping_route_create` 与 `e3d_piping_route_verify` 提供独立的[原生落模和复查流程](piping-native-route.md)。
+这项能力在 Python MCP 侧计算，使用已有 Addin 的连接点读取接口，无需部署新的 DLL。`e3d_piping_route_create` 与 `e3d_piping_route_verify` 提供独立的[原生落模和复查流程](piping-native-route.md)，并可通过[多 Agent 工作流](modeling-team-workflows.md)与设备建模步骤同步编排。
 
 ## 调用示例
 

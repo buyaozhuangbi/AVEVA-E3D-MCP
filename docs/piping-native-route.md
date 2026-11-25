@@ -1,6 +1,6 @@
 # 原生管道自动落模
 
-`e3d_piping_route_create` 把显式中心线路径创建为新的原生 PIPE、BRAN、ELBO，以及 E3D 自动生成的隐式 TUBI。`e3d_piping_route_verify` 对现有管线进行独立只读核验。两者使用已有 E3D21 Addin 的读取和有请求日志的 PML 接口，无需替换运行中的 DLL。版本维持 0.2.2，公开 MCP 工具数为 124。
+`e3d_piping_route_create` 把显式中心线路径创建为新的原生 PIPE、BRAN、ELBO，以及 E3D 自动生成的隐式 TUBI。`e3d_piping_route_verify` 对现有管线进行独立只读核验。两者使用已有 E3D21 Addin 的读取和有请求日志的 PML 接口，无需替换运行中的 DLL。多 Agent 场景可经 `e3d_modeling_team_execute` 顺序提交并回读多项路线/设备作业。
 
 ## 支持范围
 

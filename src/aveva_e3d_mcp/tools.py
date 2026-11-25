@@ -558,6 +558,8 @@ def create_server(settings: Settings | None = None) -> McpServer:
     register_piping_route_plan(server, bridge)
     from .piping_native_route import register_native_piping_route
     register_native_piping_route(server, bridge)
+    from .modeling_team import register_modeling_team
+    register_modeling_team(server, bridge, settings)
     from .paragon_catalogue import register_paragon_catalogue_manifest
     register_paragon_catalogue_manifest(server, bridge)
     from .module_context import register_module_context

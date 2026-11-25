@@ -22,7 +22,7 @@ class GeneratedCsgToolTests(unittest.TestCase):
 
     def test_discovery_is_additive_readonly_and_bounded(self):
         tools = {row["name"]: row for row in self.rpc("tools/list", {})["tools"]}
-        self.assertEqual(len(tools), 124)
+        self.assertEqual(len(tools), 126)
         tool = tools["e3d_generated_csg"]
         self.assertTrue(tool["annotations"]["readOnlyHint"])
         self.assertFalse(tool["annotations"]["destructiveHint"])
