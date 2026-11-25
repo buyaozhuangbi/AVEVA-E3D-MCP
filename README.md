@@ -2,7 +2,7 @@
 
 面向 AVEVA Everything3D（E3D）的模型开发与调试 MCP 服务。Codex、Claude Desktop 和 Cursor 等客户端通过 stdio 调用 Python 服务。连接真实工程时，Python 服务通过本机 HTTP 与 E3D 2.1 进程内的 .NET Addin 通信。
 
-当前版本为 **0.2.1**，注册 **122 个 MCP 工具**。使用 `tools/list` 查看工具定义，使用 `e3d_status` 检查连接和已加载 Addin 的功能。[版本更新](#版本更新)
+当前版本为 **0.2.2**，注册 **122 个 MCP 工具**。使用 `tools/list` 查看工具定义，使用 `e3d_status` 检查连接和已加载 Addin 的功能。[版本更新](#版本更新)
 
 ## 能力概览
 
@@ -63,6 +63,7 @@
 - **按规范生成**：`e3d_paragon_generate_from_standard` 支持 E3D 内置 SPEC/SPCO/CATREF 链路和外部标准到 PARAM 的明确映射。`e3d_paragon_generation_plan` 生成只读复核草稿。[规范生成说明](docs/paragon-standard-generation.md)
 - **参数更新**：`e3d_paragon_component_parameters_set` 对已存在的 SCOM 预览并更新完整数值 PARAM 数组，执行后按类型化数值回读。`e3d_paragon_component_parameters_status` 查询其账本。[PARAM 说明](docs/paragon-component-parameters.md)
 - **引用追踪**：`e3d_paragon_reference_trace` 沿显式 Design、Catalogue 和 Property DBREF 路径读取类型化身份及引用证据。[追踪说明](docs/paragon-reference-trace.md)
+- **建库流程**：按 CATA 核验、SECT/CATE 层级、PTSE/GMSE 定义、SCOM 创建的顺序操作，并明确哪些步骤当前只支持预览或需要现有定义。[PARAGON 元件库工作流](docs/paragon-library-workflow.md)
 
 写入工具需要目标 Addin 暴露相应 feature，并要求显式预览和对应 session、build、revision、request ID。复用点集/型集不代表已验证点位求值、型集几何生成、单位或工程适用性。数据库和访问配置由用户在 ADMIN 管理，MCP 的 CATA 建库流程只准备 ADMIN 字段并指导建库后核验。
 
@@ -98,6 +99,13 @@
 适用的元素、几何和 PARAGON 写入工具采用各自的 dry-run 预览、显式执行和原生读回。调用者应检查工具是否可用、输入目标、预览修订、执行回执及失败后的 residual state。写操作不是跨 API 事务。服务不会仅因超时或回读失败就自动重试、删除对象、保存工程或恢复 CE。默认保持 `E3D_MCP_ALLOW_COMMANDS=false`，只在明确需要时开启。
 
 ## 版本更新
+
+### v0.2.2
+
+- **管道与设备建模预览**。管道和设备计划可为现有父级下的直接子项请求原生 `dry_run` 与 revision；后续步骤依赖新建父级的，需取得 DBREF 后再预览。每次创建会改变父级成员状态，继续前应刷新计划。
+- **CATA 身份核验**。TEAM 原生 `NAMN` 的单个前导 `*` 作为名称标记处理，修复 DB → DBLI → TEAM 归属关系降级为未知的问题。身份清单上限提高到 250 项；CATA 建库后核验请求设置为 250，并继续保留分页、项目级唯一性和 MDB 记录等价性未知状态。[CATA 建库手册](docs/paragon-database-creation.md)
+
+[查看 v0.2.2 源码](https://github.com/buyaozhuangbi/AVEVA-E3D-MCP/tree/v0.2.2) · [查看 v0.2.1 至 v0.2.2 的变更](https://github.com/buyaozhuangbi/AVEVA-E3D-MCP/compare/v0.2.1...v0.2.2)
 
 ### v0.2.1
 

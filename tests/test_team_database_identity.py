@@ -130,7 +130,7 @@ def test_mock_is_explicitly_unavailable_and_contract_describes_public_route():
     assert set(contract["request_parameters"]) == {"expected_context", "limit"}
     assert "bridge_build" in contract["envelope_fields"] and "sessionId" in contract["server_arguments"]
     contract["limits"]["per_source"] = 999
-    assert route_wiring_contract()["limits"]["per_source"] == 200
+    assert route_wiring_contract()["limits"]["per_source"] == 250
 
 
 def test_contract_matches_public_optional_interface_and_route():
@@ -146,14 +146,14 @@ def test_contract_matches_public_optional_interface_and_route():
 
 @pytest.mark.parametrize("args", [None, [], {}, {"expected_context": ""}, {"expected_context": "A" * 64},
     {"expected_context": "a" * 63}, {"expected_context": "a" * 64 + "\n"}, {"expected_context": 1},
-    *[{**ARGS, "limit": value} for value in (True, False, 0, -1, 201, "1", 1.0, None)],
+    *[{**ARGS, "limit": value} for value in (True, False, 0, -1, 251, "1", 1.0, None)],
     *[{**ARGS, key: "x"} for key in ("offset", "sessionId", "session_id", "bridge_build", "team", "name")]])
 def test_invalid_native_arguments_fail_without_io(args):
     with pytest.raises(ValueError):
         team_database_identity_manifest(NoIOBridge(), args)
 
 
-@pytest.mark.parametrize("limit", [1, 64, 200])
+@pytest.mark.parametrize("limit", [1, 64, 200, 250])
 def test_valid_limit_boundaries_are_preserved_without_normalization(limit):
     assert _parameters({**ARGS, "limit": limit}) == {**ARGS, "limit": limit}
 
@@ -543,7 +543,7 @@ def test_changed_or_unreadable_after_ce_keeps_all_evidence_unknown(reply, unread
 def test_caps_indexes_and_overclaims_fail_closed(reply, mutation):
     result = reply["result"]
     if mutation == "limit":
-        result["limit_per_source"] = 200
+        result["limit_per_source"] = 250
     elif mutation == "array_cap":
         result["scans"]["databases"]["materialized_count"] = 10001
     elif mutation == "return_count":
@@ -553,7 +553,7 @@ def test_caps_indexes_and_overclaims_fail_closed(reply, mutation):
     elif mutation == "owner_path":
         result["databases"][0]["owner_path"].append(identity(50, "WORL"))
     elif mutation == "candidate_cap":
-        result["databases"][0]["current_mdb"]["candidate_indexes"] = list(range(201))
+        result["databases"][0]["current_mdb"]["candidate_indexes"] = list(range(251))
     elif mutation == "matched_index":
         result["databases"][0]["current_mdb"]["matched_index"] = True
     elif mutation == "bool_index":

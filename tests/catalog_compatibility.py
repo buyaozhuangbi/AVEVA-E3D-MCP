@@ -58,6 +58,18 @@ OPTIONAL_MODELING_FIELDS = {
     }),
 }
 
+OPTIONAL_IDENTITY_FIELDS = {
+    "e3d_team_database_identity_manifest": {
+        "property_updates": {"limit": {"maximum": 250}},
+    },
+}
+
+POST_0_2_1_PARAGON_TOOLS = {
+    "e3d_paragon_reference_trace", "e3d_paragon_component_copy", "e3d_paragon_component_copy_status",
+    "e3d_paragon_component_parameters_set", "e3d_paragon_component_parameters_status",
+    "e3d_paragon_generate_from_standard", "e3d_paragon_component_create", "e3d_paragon_component_create_status",
+}
+
 _MODELING_DESCRIPTION_EDITS = {
     "e3d_database_preflight": (
         ("Admin creates CATA databases for PARAGON; this tool does not specify or create a CATA root element.",
@@ -83,20 +95,22 @@ _MODELING_DESCRIPTION_EDITS = {
 
 def with_modeling_additions(historical):
     name = historical["name"]
-    if name not in OPTIONAL_MODELING_FIELDS:
-        return historical
-    field, schema = OPTIONAL_MODELING_FIELDS[name]
     updated = deepcopy(historical)
-    properties = updated["inputSchema"]["properties"]
-    if field not in properties:
-        properties[field] = schema
-        for old, new in _MODELING_DESCRIPTION_EDITS[name]:
-            assert old in updated["description"], (name, old)
-            updated["description"] = updated["description"].replace(old, new, 1)
-        if name == "e3d_database_preflight":
-            properties["database_type"]["description"] = (
-                "DESI is Design; CATA is the Catalogue database type. Optional root_name adds a CATA root through WITH CATA /NAME."
-            )
+    if name in OPTIONAL_MODELING_FIELDS:
+        field, schema = OPTIONAL_MODELING_FIELDS[name]
+        properties = updated["inputSchema"]["properties"]
+        if field not in properties:
+            properties[field] = schema
+            for old, new in _MODELING_DESCRIPTION_EDITS[name]:
+                assert old in updated["description"], (name, old)
+                updated["description"] = updated["description"].replace(old, new, 1)
+            if name == "e3d_database_preflight":
+                properties["database_type"]["description"] = (
+                    "DESI is Design; CATA is the Catalogue database type. Optional root_name adds a CATA root through WITH CATA /NAME."
+                )
+    identity = OPTIONAL_IDENTITY_FIELDS.get(name)
+    if identity:
+        updated["inputSchema"]["properties"]["limit"].update(identity["property_updates"]["limit"])
     return updated
 
 

@@ -44,7 +44,7 @@ ADMIN 创建的 CATA 数据库及根元素与后续 PARAGON 元件生成是分�
 建库并完成 MDB 配置后，使用 `post_create_verification.steps` 中的只读工具调用：
 
 1. `e3d_database_state` 从当前 MDB 读取新库名称、类型和数据库号。若首个 200 项页面有后续页，使用返回的 `next_offset` 和 `context_id` 继续。
-2. 将新读到的 `context_id` 传给 `e3d_team_database_identity_manifest`，检查 DB → DBLI → TEAM 的归属链，并将当前 MDB 中的候选身份与步骤 1 的数据库清单对照。候选身份的等价性仍待确认。
+2. 将新读到的 `context_id` 传给 `e3d_team_database_identity_manifest`，检查 DB → DBLI → TEAM 的归属链，并将当前 MDB 中的候选身份与步骤 1 的数据库清单对照。可将 `limit` 设为 `250`；若返回仍不完整，应保留 partial 状态并继续读取。E3D 的原生 TEAM `NAMN` 可能带一个前缀 `*`（例如 `*CATADMIN`）；工具保留原值，只在规范化团队名时去掉这一个标记。候选身份的等价性仍待确认。
 3. 将 ADMIN 中填写的完整 `/NAME` 传给 `e3d_paragon_catalogue_manifest`。核对第 0 行的名称、`CATA` 元素类型和 Catalogue 存储类型，并用返回的 DBREF 核对目标数据库的归属。
 4. 将同一 `/NAME` 传给 `e3d_paragon_catalogue_schema`，核对根元素仍为 Catalogue/CATA，并记录可用的 PARAGON 子类型。该步骤只提供创建 SECT/CATE/SCOM 前的 Schema 观察，不执行目录成员创建。
 

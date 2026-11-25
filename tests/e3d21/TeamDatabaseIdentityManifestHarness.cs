@@ -414,6 +414,15 @@ internal static class TeamDatabaseIdentityManifestHarness
             Scenario.Reset(); Scenario.Master.Name = name;
             var result = Read(); Check(Candidates(result, 0, 1), "explicit prefix/case normalization for raw candidates " + name);
         }
+        Scenario.Reset(); Scenario.Team.Name = "*PIPING";
+        var markedTeam = Read();
+        Check(Equals(Relation(markedTeam)["status"], "confirmed") &&
+            Equals(Dict(Relation(markedTeam)["confirmed_team"])["refno"], "=5/10"),
+            "native TEAM marker is a namespace prefix, not a wildcard");
+        Scenario.Reset(); Scenario.Team.Name = "**PIPING";
+        var doubleMarker = Read();
+        Check(Equals(Relation(doubleMarker)["status"], "unverified"),
+            "only one native TEAM marker is normalized");
         foreach (string name in new[] { "BASE", "//PIPING/BASE", "/*PIPING/BASE/EXTRA", "PIPING/BASE ", "PIPING/UNSET", "PIPING/*", "", "PIPING/BA\nSE", new string('A', 257) })
         {
             Scenario.Reset(); Scenario.Master.Name = name;
@@ -446,9 +455,9 @@ internal static class TeamDatabaseIdentityManifestHarness
     {
         var defaults = TeamDatabaseIdentityManifestRequest.Validate(Expected());
         Check(defaults.ExpectedContext == Expected() && defaults.Limit == 64 &&
-            TeamDatabaseIdentityManifestRequest.DefaultLimit == 64 && TeamDatabaseIdentityManifestRequest.MaximumLimit == 200,
+            TeamDatabaseIdentityManifestRequest.DefaultLimit == 64 && TeamDatabaseIdentityManifestRequest.MaximumLimit == 250,
             "strict managed request preserves required digest and default per-source bound");
-        foreach (int limit in new[] { 1, 64, 200 })
+        foreach (int limit in new[] { 1, 64, 200, 250 })
             Check(TeamDatabaseIdentityManifestRequest.Validate(Expected(), limit).Limit == limit, "inclusive managed request limit " + limit);
         foreach (string expected in new[] { null, "", "bad", new string('A', 64), " " + Expected(), Expected() + "\n" })
             Throws<ArgumentException>(() => TeamDatabaseIdentityManifestRequest.Validate(expected), "strict managed context input");
@@ -475,7 +484,7 @@ internal static class TeamDatabaseIdentityManifestHarness
         var unreadable = Read(); Check(Equals(Dict(unreadable["context"])["boundary_agreement"], false), "failed final CE read cannot certify context");
         Scenario.Reset(); Throws<InvalidOperationException>(() => Read(expected: new string('0', 64)), "stale context rejected");
         Check(!Scenario.Reads.Contains("teams.array"), "stale context rejected before catalog arrays");
-        foreach (int limit in new[] { 0, -1, 201 })
+        foreach (int limit in new[] { 0, -1, 251 })
         {
             Scenario.Reset(); Throws<ArgumentOutOfRangeException>(() => Read(limit: limit), "invalid bound");
             Check(Scenario.Dispatches == 0 && Scenario.Reads.Count == 0, "invalid bound before dispatch");

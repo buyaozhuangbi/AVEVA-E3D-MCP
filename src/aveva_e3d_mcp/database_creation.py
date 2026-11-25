@@ -236,7 +236,7 @@ def _post_create_verification(candidate: dict[str, Any]) -> dict[str, Any]:
             },
             {
                 "tool": "e3d_team_database_identity_manifest",
-                "arguments": {"expected_context": "<fresh context_id from e3d_database_state>", "limit": 200},
+                "arguments": {"expected_context": "<fresh context_id from e3d_database_state>", "limit": 250},
                 "check": "Check the typed DB -> DBLI -> TEAM owner chain and compare current-MDB candidate identities with database_state. Raw matches do not prove record equivalence.",
             },
             {

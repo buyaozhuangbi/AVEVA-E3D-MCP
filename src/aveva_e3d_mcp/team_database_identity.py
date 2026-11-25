@@ -28,7 +28,7 @@ TOOL = "e3d_team_database_identity_manifest"
 PATH = "/api/v1/database/team-identity-manifest"
 FEATURE = "team_database_identity_manifest"
 OPERATION = "internal_team_database_identity_manifest"
-DEFAULT_LIMIT, MAX_LIMIT, MAX_MATERIALIZED_ARRAY = 64, 200, 10000
+DEFAULT_LIMIT, MAX_LIMIT, MAX_MATERIALIZED_ARRAY = 64, 250, 10000
 MAX_TEXT, MAX_ROW_ERRORS = 256, 8
 _INT_MAX = 2147483647
 _CONTEXT = re.compile(r"[a-f0-9]{64}")
@@ -238,6 +238,11 @@ def _identity(value: Any, types: dict[int, str], *, record_type: str | None = No
 def _canonical(raw: str, database: bool) -> str:
     _need(_text(raw) and not any(c.isspace() for c in raw), "literal native name")
     name = raw[2:] if raw.startswith("/*") else raw[1:] if raw.startswith("/") else raw
+    # E3D stores TEAM names with a leading `*` marker (for example
+    # `*CATADMIN`).  It is a namespace marker, not a wildcard.  Database
+    # names retain the strict wildcard rejection below.
+    if not database and name.startswith("*"):
+        name = name[1:]
     parts = name.split("/")
     _need(len(parts) == (2 if database else 1) and all(
         part and not any(c in part for c in "*?") and part.upper() != "UNSET" for part in parts), "full Team or Team/DB name")

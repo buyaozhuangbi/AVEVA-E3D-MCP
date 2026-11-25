@@ -114,7 +114,7 @@ class ParagonComponentCreateHttpContractTests(unittest.TestCase):
         sys.path.insert(0, str(ROOT / "src"))
         from aveva_e3d_mcp.config import Settings
         from aveva_e3d_mcp.tools import create_server
-        from catalog_compatibility import OPTIONAL_MODELING_FIELDS, with_modeling_additions
+        from catalog_compatibility import OPTIONAL_IDENTITY_FIELDS, OPTIONAL_MODELING_FIELDS, with_modeling_additions
 
         server = create_server(Settings(mode="mock"))
         response = server._dispatch({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
@@ -126,7 +126,8 @@ class ParagonComponentCreateHttpContractTests(unittest.TestCase):
         self.assertEqual(len(previous), 120)
         self.assertEqual(len(current), 122)
         baseline = json.loads((ROOT / "tests/fixtures/paragon_standard_generation_catalog119.json").read_bytes())
-        predecessors = {row["name"]: row for row in baseline["tools"] if row["name"] in OPTIONAL_MODELING_FIELDS}
+        predecessors = {row["name"]: row for row in baseline["tools"]
+                        if row["name"] in OPTIONAL_MODELING_FIELDS | OPTIONAL_IDENTITY_FIELDS}
         for name, definition in predecessors.items():
             self.assertEqual(by_name[name], with_modeling_additions(definition))
         previous = [predecessors.get(tool["name"], tool) for tool in previous]

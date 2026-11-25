@@ -108,6 +108,17 @@ def test_team_database_identity_manifest_with_managed_fakes(managed_receipts, re
     print(managed_receipts["matrix"])
 
 
+def test_native_team_marker_is_canonicalized_without_relaxing_database_names():
+    from aveva_e3d_mcp.team_database_identity import _canonical
+
+    assert _canonical("*CATADMIN", False) == "CATADMIN"
+    assert _canonical("/*PIPING", False) == "PIPING"
+    with pytest.raises(ValueError):
+        _canonical("**CATADMIN", False)
+    with pytest.raises(ValueError):
+        _canonical("PIPING/*", True)
+
+
 def test_native_receipts_satisfy_final_python_contract(managed_receipts, record_property):
     from aveva_e3d_mcp.team_database_identity import validate_team_database_identity_manifest
 

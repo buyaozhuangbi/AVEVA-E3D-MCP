@@ -185,6 +185,7 @@ internal static class TeamDatabaseIdentityHttpHarness
         Accept(Body(new { expected_context = Digest, limit = 64 }));
         Accept(Body(new { expected_context = Digest, limit = 1 }), limit: 1);
         Accept(Body(new { expected_context = Digest, limit = 200 }), limit: 200);
+        Accept(Body(new { expected_context = Digest, limit = 250 }), limit: 250);
         Accept(Body(new { expected_context = new string('0', 64) }), expectedContext: new string('0', 64));
         Accept(Body(new { expected_context = new string('f', 64) }), expectedContext: new string('f', 64));
         Accept("{\"expected_contex\\u0074\":\"" + Digest + "\"}");
@@ -230,8 +231,8 @@ internal static class TeamDatabaseIdentityHttpHarness
         foreach (string value in new[] { "null", "true", "false", "\"64\"", "64.0", "1e0", "[]", "{}", "NaN", "Infinity",
             "2147483648", "-2147483649", "999999999999999999999999999999999999" })
             Reject("{\"expected_context\":\"" + Digest + "\",\"limit\":" + value + "}", "limit requires a real JSON bounded integer");
-        foreach (int limit in new[] { int.MinValue, -1, 0, 201, int.MaxValue })
-            Reject(Body(new { expected_context = Digest, limit = limit }), "limit range 1..200");
+        foreach (int limit in new[] { int.MinValue, -1, 0, 251, int.MaxValue })
+            Reject(Body(new { expected_context = Digest, limit = limit }), "limit range 1..250");
     }
 
     private static void BodyBudget()

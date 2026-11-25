@@ -16,7 +16,7 @@ public interface IE3d21TeamDatabaseIdentityManifestContext
 internal sealed class TeamDatabaseIdentityManifestRequest
 {
     internal const int DefaultLimit = 64;
-    internal const int MaximumLimit = 200;
+    internal const int MaximumLimit = 250;
     internal string ExpectedContext;
     internal int Limit;
 
@@ -123,16 +123,19 @@ internal sealed class TeamDbMdb
 
 internal static class TeamDatabaseIdentityManifest
 {
-    internal const int MaximumLimit = 200, MaximumMaterializedArray = 10000, MaximumTextLength = 256;
+    internal const int MaximumLimit = 250, MaximumMaterializedArray = 10000, MaximumTextLength = 256;
 
-    // Accept only the documented leading /*, a single /, or an unprefixed name.
-    // Never trim arbitrary slashes, split off just the basename, or infer a Team.
+    // Accept the native TEAM marker (`*TEAM`) as well as the documented
+    // leading /*, a single /, or an unprefixed name.  The marker is a
+    // namespace prefix, not a wildcard; database names still reject every
+    // wildcard character.  Never trim arbitrary slashes or infer a Team.
     internal static string Name(string raw, bool database)
     {
         if (string.IsNullOrEmpty(raw) || raw.Length > MaximumTextLength || raw.Any(c => char.IsControl(c) || char.IsWhiteSpace(c)))
             throw new InvalidOperationException("The native identity name was empty, overlong or malformed.");
         string name = raw.StartsWith("/*", StringComparison.Ordinal) ? raw.Substring(2) :
             raw.StartsWith("/", StringComparison.Ordinal) ? raw.Substring(1) : raw;
+        if (!database && name.StartsWith("*", StringComparison.Ordinal)) name = name.Substring(1);
         string[] parts = name.Split('/');
         if (parts.Length != (database ? 2 : 1) || parts.Any(part => string.IsNullOrEmpty(part) ||
             part.IndexOfAny(new[] { '*', '?' }) >= 0 || string.Equals(part, "UNSET", StringComparison.OrdinalIgnoreCase)))

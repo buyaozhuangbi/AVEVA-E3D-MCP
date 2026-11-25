@@ -87,7 +87,7 @@ def test_registration_is_read_only_and_has_only_the_frozen_caller_arguments(repl
     assert set(schema["properties"]) == {"expected_context", "limit"}
     assert schema["required"] == ["expected_context"] and schema["additionalProperties"] is False
     assert schema["properties"]["limit"] == {
-        "type": "integer", "minimum": 1, "maximum": 200, "default": 64,
+        "type": "integer", "minimum": 1, "maximum": 250, "default": 64,
         "description": "Independent maximum for each of TEAM, system DB records and current MDB arrays."}
     assert definition["annotations"] == {"readOnlyHint": True, "destructiveHint": False,
                                           "idempotentHint": True, "openWorldHint": False}
@@ -100,7 +100,7 @@ def test_registration_is_read_only_and_has_only_the_frozen_caller_arguments(repl
 @pytest.mark.parametrize("arguments", [
     {}, {"expected_context": CONTEXT.upper()}, {"expected_context": CONTEXT + "\n"},
     {**ARGS, "limit": True}, {**ARGS, "limit": None}, {**ARGS, "limit": 1.0},
-    {**ARGS, "limit": 0}, {**ARGS, "limit": 201},
+    {**ARGS, "limit": 0}, {**ARGS, "limit": 251},
     *[{**ARGS, name: "untrusted"} for name in ("session_id", "bridge_build", "team", "offset", "execute")],
 ])
 def test_registered_invalid_arguments_never_read_health_or_manifest(reply, arguments):
