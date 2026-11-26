@@ -4,6 +4,7 @@ The production handler setup, health predicates, selected routes, complete
 fallback/catch chain and JSON helper closure are compiled with the production
 managed request/interface. Only the HTTP carrier and native context are fakes.
 """
+from catalog_compatibility import CURRENT_MOCK_TOOL_COUNT, MODELING_TEAM_TOOLS, E3D_IDENTITY_TOOLS
 from pathlib import Path
 import hashlib
 import json
@@ -16,6 +17,7 @@ import tempfile
 import unittest
 from xml.sax.saxutils import escape
 
+from http_contract_capabilities import append_element_ancestry_interface
 from test_model_validation_native_contract import block_end, extract_method
 
 
@@ -30,8 +32,8 @@ ROUTES = (
 )
 # Captured before component-create registration, from all 120 public tool
 # definitions (including their descriptions and complete input schemas).
-OLD_CATALOG_SHA256 = "90efe4ee3b16651726cd59931b6717f0efa98b3957e1746fb9fd7fe22e109b73"
-NEW_TOOLS = {"e3d_paragon_component_create", "e3d_paragon_component_create_status", "e3d_piping_route_create", "e3d_piping_route_verify", "e3d_modeling_team_plan", "e3d_modeling_team_execute"}
+OLD_CATALOG_SHA256 = "e1dc7b91adb05e6a233509209734992b3939eca7c5456e6822cfdc3723841377"
+NEW_TOOLS = {"e3d_paragon_component_create", "e3d_paragon_component_create_status", "e3d_piping_route_create", "e3d_piping_route_verify", *MODELING_TEAM_TOOLS, *E3D_IDENTITY_TOOLS}
 
 
 def _selected_handler(adapter: str) -> str:
@@ -90,6 +92,7 @@ class ParagonComponentCreateHttpContractTests(unittest.TestCase):
             "MessageCursor.cs", "EquipmentManifest.cs", "EquipmentChildSchema.cs", "PipeMemberManifest.cs",
             "ModelEditInput.cs", "AttributeEditPolicy.cs",
         )
+        harness = append_element_ancestry_interface(adapter, harness)
         with tempfile.TemporaryDirectory(prefix="paragon-component-create-http-") as temporary:
             output = Path(temporary)
             (output / "Harness.cs").write_text(harness, encoding="utf-8")
@@ -124,7 +127,7 @@ class ParagonComponentCreateHttpContractTests(unittest.TestCase):
         self.assertTrue(NEW_TOOLS <= by_name.keys())
         previous = [tool for tool in current if tool["name"] not in NEW_TOOLS]
         self.assertEqual(len(previous), 120)
-        self.assertEqual(len(current), 126)
+        self.assertEqual(len(current), CURRENT_MOCK_TOOL_COUNT)
         baseline = json.loads((ROOT / "tests/fixtures/paragon_standard_generation_catalog119.json").read_bytes())
         predecessors = {row["name"]: row for row in baseline["tools"]
                         if row["name"] in OPTIONAL_MODELING_FIELDS | OPTIONAL_IDENTITY_FIELDS}

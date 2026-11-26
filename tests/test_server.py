@@ -1,4 +1,5 @@
 from __future__ import annotations
+from catalog_compatibility import MODELING_TEAM_TOOLS, E3D_IDENTITY_TOOLS
 
 import json
 import os
@@ -65,7 +66,7 @@ class McpServerTests(unittest.TestCase):
                 "e3d_primitive_mesh", "e3d_primitive_csg_mesh", "e3d_project_primitive_csg_drawing", "e3d_element_mesh", "e3d_compare_element_meshes", "e3d_project_element_drawing", "e3d_project_assembly_drawing", "e3d_project_material_assembly_drawing", "e3d_project_material_assembly_sheet", "e3d_project_material_assembly_tiles", "e3d_equipment_layout_sheet", "e3d_nozzle_datum_sheet", "e3d_equipment_outline_sheet", "e3d_nozzle_axis_sheet", "e3d_equipment_layout_tiles", "e3d_nozzle_outline_sheet", "e3d_compose_drawing_sheet", "e3d_compose_drawing_atlas", "e3d_section_element_drawing", "e3d_section_assembly_drawing",
                 "e3d_primitive_geometry", "e3d_generated_csg", "e3d_update_primitive", "e3d_find_descendants", "e3d_diagnose_element", "e3d_diagnostic_receipt", "e3d_compare_diagnostic_receipts",
                 "e3d_nozzle_orientation_drawing", "e3d_equipment_layout_drawing",
-                "e3d_piping_route_create", "e3d_piping_route_verify", "e3d_modeling_team_plan", "e3d_modeling_team_execute",
+                "e3d_piping_route_create", "e3d_piping_route_verify", *MODELING_TEAM_TOOLS, *E3D_IDENTITY_TOOLS,
             },
         )
         definitions = {tool["name"]: tool for tool in responses[1]["result"]["tools"]}

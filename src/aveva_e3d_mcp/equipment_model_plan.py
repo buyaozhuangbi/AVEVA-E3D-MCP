@@ -22,6 +22,7 @@ _TYPE = re.compile(r"[A-Za-z0-9_:]{1,64}")
 _STEP_ID = re.compile(r"[A-Za-z][A-Za-z0-9_-]{0,31}")
 _COPY_ROOT_TYPES = {"BOX", "CYLI", "CONE", "DISH", "SUBE", "PANE"}
 _EQUIPMENT_REF_MAX_LENGTH = 256
+_SHA = re.compile(r"[0-9a-f]{64}")
 
 
 def _text(value: Any) -> bool:
@@ -991,16 +992,16 @@ def equipment_model_plan(bridge: BridgeClient, settings: Settings, args: dict[st
                     {"order": 3, "tool": "e3d_element_snapshot", "purpose": "Verify copied subtree identities and destination parentage."},
                 ]
             else:
-                item["revision"] = {"native_token": None, "source": "not_supported_by_e3d_set_transform",
-                    "required_for_execution": False,
-                    "guard": "e3d_set_transform has no expected_revision parameter; this plan fingerprint cannot replace one."}
+                item["revision"] = {"native_token": None, "source": "not_requested",
+                    "required_for_execution": True,
+                    "next_step": "Call e3d_set_transform with the exact request and dry_run=true; use only its returned revision for a later execution."}
                 item["write_steps"] = [
                     {"order": 1, "tool": "e3d_spatial_info", "purpose": "Re-read target pose and parent immediately before any edit."},
                     {"order": 2, "tool": "e3d_transform_coordinates", "purpose": "Re-convert the requested values from the same explicit frame."},
                     {"order": 3, "tool": "e3d_set_transform", "dry_run": True,
-                     "purpose": "Native validation; it does not return a revision."},
+                     "purpose": "Native validation and current target revision."},
                     {"order": 4, "tool": "e3d_set_transform", "dry_run": False,
-                     "precondition": "Explicit user-authorized write; there is no revision compare-and-set guard."},
+                     "precondition": "Same request and expected_revision from step 3; explicitly enabled command permission."},
                     {"order": 5, "tool": "e3d_spatial_info", "purpose": "Verify WORLD position/orientation and inspect notification/readback result."},
                 ]
             if context_tainted:
@@ -1094,7 +1095,12 @@ def _prepare_native_previews(bridge: BridgeClient, settings: Settings, response:
                                   else "preview_dispatch_failed")
             return
         if preview["status"] == "observed":
-            observed.append(item)
+            native_result = preview.get("response", {}).get("result", {})
+            token = native_result.get("revision") if isinstance(native_result, dict) else None
+            if not isinstance(token, str) or _SHA.fullmatch(token) is None:
+                preview["status"] = "unverified"
+                continue
+            observed.append((item, token))
 
     after = context_snapshot(bridge, settings)
     previews["preview_context"]["after"] = after
@@ -1103,15 +1109,14 @@ def _prepare_native_previews(bridge: BridgeClient, settings: Settings, response:
     previews["preview_context"]["boundary_agreement"] = agreement
     if agreement is not True:
         previews["status"] = "context_unverified"
-        for item in observed:
+        for item, _ in observed:
             item["native_preview"]["status"] = "context_unverified"
         return
 
-    for item in observed:
+    for item, token in observed:
         preview = item["native_preview"]
-        if item["operation"] != "transform":
-            item["revision"].update(native_token=preview["response"]["result"]["revision"], source="native_dry_run",
-                                    next_step="Use the exact native preview arguments and its revision.")
+        item["revision"].update(native_token=token, source="native_dry_run",
+                                next_step="Use the exact native preview arguments and its revision.")
         preview["status"] = "prepared"
     previews["prepared_count"] = len(observed)
     previews["complete"] = len(observed) == len(steps)
@@ -1191,7 +1196,7 @@ def register_equipment_model_plan(server: McpServer, bridge: BridgeClient, setti
         "Reads one complete equipment manifest, native parent/target schemas, optional same-type attribute constraints, "
         "WORLD poses and frame conversions, bracketed by fresh context snapshots. Set include_native_previews=true to request the exact create/copy/transform dry_run routes and receive native create/copy revisions when context remains stable. Inspect status, context_consistency, "
         "step parent paths, constraints, unknowns and write_steps. A ready result is not engineering approval. "
-        "e3d_set_transform has no revision guard. This tool does not execute model writes, PML, selection, display or capture.",
+        "e3d_set_transform uses a native expected_revision guard; the separate e3d_modeling_team workflow can execute guarded transform tasks. This planner remains read-only and does not execute model writes, PML, selection, display or capture.",
         {"type": "object", "properties": {
             "equipment_refno": {**reference, "description": "Explicit EQUI /NAME or DBREF; the complete bounded manifest root."},
             "steps": {"type": "array", "items": step_schema, "minItems": 1, "maxItems": 16},

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from catalog_compatibility import CURRENT_MOCK_TOOL_COUNT
 
 import copy
 import json
@@ -67,7 +68,7 @@ class ElementAccessToolTests(unittest.TestCase):
 
     def test_catalog_and_initialize_describe_read_only_bounded_observation(self):
         tools = self.rpc("tools/list", {})["tools"]
-        self.assertEqual(len(tools), 126)
+        self.assertEqual(len(tools), CURRENT_MOCK_TOOL_COUNT)
         tool = next(item for item in tools if item["name"] == "e3d_element_access")
         self.assertEqual(tool["annotations"], {
             "readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False,

@@ -20,7 +20,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from aveva_e3d_mcp.bridge import BridgeClient
 from aveva_e3d_mcp.config import Settings
 from aveva_e3d_mcp.tools import create_server
-from catalog_compatibility import CONNECTION_POINTS_EXPECTED_TYPE_SCHEMA
+from catalog_compatibility import CURRENT_MOCK_TOOL_COUNT, CONNECTION_POINTS_EXPECTED_TYPE_SCHEMA
 
 
 class ConnectionPointsExpectedTypeTests(unittest.TestCase):
@@ -47,7 +47,7 @@ class ConnectionPointsExpectedTypeTests(unittest.TestCase):
     def test_schema_adds_only_an_optional_type_selector(self):
         server = create_server(self.settings)
         tools = server._dispatch({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}})["result"]["tools"]
-        self.assertEqual(len(tools), 126)
+        self.assertEqual(len(tools), CURRENT_MOCK_TOOL_COUNT)
         tool = next(item for item in tools if item["name"] == "e3d_connection_points")
         self.assertEqual(tool["inputSchema"]["properties"]["expected_type"], CONNECTION_POINTS_EXPECTED_TYPE_SCHEMA)
         self.assertEqual(tool["inputSchema"]["required"], ["refno"])

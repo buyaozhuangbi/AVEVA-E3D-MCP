@@ -1,4 +1,5 @@
 """Exercise the numeric camera MCP boundary, transport and picture receipt."""
+from catalog_compatibility import CURRENT_MOCK_TOOL_COUNT
 import copy
 import json
 from io import StringIO
@@ -37,7 +38,7 @@ class CameraEditingToolTests(unittest.TestCase):
 
     def test_discovery_required_fields_preview_revision_and_capture(self):
         catalog = self.rpc("tools/list", {})["tools"]
-        self.assertEqual(len(catalog), 126)
+        self.assertEqual(len(catalog), CURRENT_MOCK_TOOL_COUNT)
         self.assertEqual(sum("capture_after" in t["inputSchema"]["properties"] for t in catalog), 19)
         tool = next(t for t in catalog if t["name"] == "e3d_set_camera")
         schema = tool["inputSchema"]

@@ -1,5 +1,6 @@
 """Offline contracts for session-guarded script submission and receipt lookup."""
 from __future__ import annotations
+from catalog_compatibility import CURRENT_MOCK_TOOL_COUNT
 
 import io
 import http.client
@@ -184,7 +185,7 @@ class PmlScriptStatusToolsTests(unittest.TestCase):
 
     def test_status_discovery_is_read_only_and_has_only_two_required_arguments(self):
         definitions = self.server._dispatch({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})["result"]["tools"]
-        self.assertEqual(len(definitions), 126)
+        self.assertEqual(len(definitions), CURRENT_MOCK_TOOL_COUNT)
         tool = next(tool for tool in definitions if tool["name"] == "e3d_pml_script_status")
         self.assertEqual(set(tool["inputSchema"]["properties"]), {"request_id", "expected_session_id"})
         self.assertEqual(set(tool["inputSchema"]["required"]), {"request_id", "expected_session_id"})

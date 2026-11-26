@@ -11,12 +11,12 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from aveva_e3d_mcp.config import Settings
 from aveva_e3d_mcp.tools import create_server
-from catalog_compatibility import with_modeling_additions
+from catalog_compatibility import CURRENT_MOCK_TOOL_COUNT, MODELING_TEAM_TOOLS, E3D_IDENTITY_TOOLS, with_modeling_additions
 
 
 BASELINE = ROOT / "tests/fixtures/paragon_generation_catalog112.json"
 BASELINE_SHA256 = "853476f36000ee7cc7a21875e4bb30cfd2bd26f2d5c25e5311cff65e3039aa8d"
-ADDED_TOOLS = {"e3d_paragon_generation_plan", "e3d_paragon_component_template", "e3d_paragon_reference_trace", "e3d_paragon_component_copy", "e3d_paragon_component_copy_status", "e3d_paragon_component_parameters_set", "e3d_paragon_component_parameters_status", "e3d_paragon_generate_from_standard", "e3d_paragon_component_create", "e3d_paragon_component_create_status", "e3d_piping_route_create", "e3d_piping_route_verify", "e3d_modeling_team_plan", "e3d_modeling_team_execute"}
+ADDED_TOOLS = {"e3d_paragon_generation_plan", "e3d_paragon_component_template", "e3d_paragon_reference_trace", "e3d_paragon_component_copy", "e3d_paragon_component_copy_status", "e3d_paragon_component_parameters_set", "e3d_paragon_component_parameters_status", "e3d_paragon_generate_from_standard", "e3d_paragon_component_create", "e3d_paragon_component_create_status", "e3d_piping_route_create", "e3d_piping_route_verify", *MODELING_TEAM_TOOLS, *E3D_IDENTITY_TOOLS}
 
 
 class ParagonGenerationCatalogCompatibilityTests(unittest.TestCase):
@@ -29,9 +29,9 @@ class ParagonGenerationCatalogCompatibilityTests(unittest.TestCase):
         )["result"]["tools"]
 
         self.assertEqual(len(baseline), 112)
-        self.assertEqual(len(current), 126)
+        self.assertEqual(len(current), CURRENT_MOCK_TOOL_COUNT)
         self.assertEqual(len({tool["name"] for tool in baseline}), 112)
-        self.assertEqual(len({tool["name"] for tool in current}), 126)
+        self.assertEqual(len({tool["name"] for tool in current}), CURRENT_MOCK_TOOL_COUNT)
         old_by_name = {tool["name"]: tool for tool in baseline}
         current_by_name = {tool["name"]: tool for tool in current}
         self.assertEqual(set(current_by_name) - set(old_by_name), ADDED_TOOLS)

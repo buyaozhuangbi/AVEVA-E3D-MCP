@@ -68,6 +68,8 @@ python -m pip install pytest
 python -B -m pytest -q tests
 ```
 
+在仓库根目录省略 `tests` 参数时，也会按 `pyproject.toml` 的配置只收集正式测试目录。
+
 测试会检查 MCP 工具、HTTP/native 合同和模拟 SDK 调用；通过测试不代表 Addin 已在目标 E3D 工程部署，也不能代替现场验收。
 
 ## 项目组成

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from catalog_compatibility import CURRENT_MOCK_TOOL_COUNT
 
 import base64
 import json
@@ -59,7 +60,7 @@ class PrimitiveUpdateToolTests(unittest.TestCase):
 
     def test_catalog_exposes_explicit_read_and_guarded_combined_update(self) -> None:
         tools = {tool["name"]: tool for tool in self._rpc("tools/list", {})["tools"]}
-        self.assertEqual(len(tools), 126)
+        self.assertEqual(len(tools), CURRENT_MOCK_TOOL_COUNT)
         read = tools["e3d_primitive_geometry"]
         self.assertEqual(read["annotations"], {
             "readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False,

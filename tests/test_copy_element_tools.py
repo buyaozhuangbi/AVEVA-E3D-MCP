@@ -1,4 +1,5 @@
 from __future__ import annotations
+from catalog_compatibility import CURRENT_MOCK_TOOL_COUNT
 
 import base64
 import json
@@ -55,7 +56,7 @@ class CopyElementToolTests(unittest.TestCase):
 
     def test_catalog_exposes_explicit_guarded_copy_and_omitted_transform_semantics(self) -> None:
         tools = {tool["name"]: tool for tool in self._rpc("tools/list", {})["tools"]}
-        self.assertEqual(len(tools), 126)
+        self.assertEqual(len(tools), CURRENT_MOCK_TOOL_COUNT)
         copy = tools["e3d_copy_element"]
         self.assertEqual(copy["annotations"], {
             "readOnlyHint": False, "destructiveHint": True, "idempotentHint": False, "openWorldHint": False,

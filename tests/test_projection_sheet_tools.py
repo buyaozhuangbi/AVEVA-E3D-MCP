@@ -1,5 +1,6 @@
 """MCP opt-in physical projection and aligned sheet integration contracts."""
 from __future__ import annotations
+from catalog_compatibility import CURRENT_MOCK_TOOL_COUNT
 
 import sys
 from pathlib import Path
@@ -30,7 +31,7 @@ class ProjectionSheetToolTests(unittest.TestCase):
 
     def test_only_two_projection_tools_discover_optional_projection_method(self):
         tools = {row["name"]: row for row in self.fixture.rpc("tools/list", {})["tools"]}
-        self.assertEqual(len(tools), 126)
+        self.assertEqual(len(tools), CURRENT_MOCK_TOOL_COUNT)
         for name in ("e3d_project_element_drawing", "e3d_project_assembly_drawing"):
             prop = tools[name]["inputSchema"]["properties"]["sheet"]["properties"]["projection_method"]
             self.assertEqual(prop["enum"], ["first_angle", "third_angle"])

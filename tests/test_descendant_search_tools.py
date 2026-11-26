@@ -1,4 +1,5 @@
 from __future__ import annotations
+from catalog_compatibility import CURRENT_MOCK_TOOL_COUNT
 
 import json
 import sys
@@ -27,7 +28,7 @@ class DescendantSearchToolsTests(unittest.TestCase):
     def test_discovery_has_only_bounded_read_controls(self):
         tools = self.rpc('tools/list', {})['tools']
         tool = next(t for t in tools if t['name'] == 'e3d_find_descendants')
-        self.assertEqual(len(tools), 126)
+        self.assertEqual(len(tools), CURRENT_MOCK_TOOL_COUNT)
         self.assertTrue(tool['annotations']['readOnlyHint'])
         self.assertFalse(tool['annotations']['destructiveHint'])
         self.assertEqual(set(tool['inputSchema']['properties']),

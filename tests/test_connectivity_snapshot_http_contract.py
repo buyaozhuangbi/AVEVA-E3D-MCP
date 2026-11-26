@@ -15,6 +15,7 @@ import tempfile
 import unittest
 from xml.sax.saxutils import escape
 
+from http_contract_capabilities import append_element_ancestry_interface
 from test_model_validation_native_contract import block_end, extract_method
 
 
@@ -90,6 +91,7 @@ class ConnectivitySnapshotHttpContractTests(unittest.TestCase):
         harness = harness.replace("// PRODUCTION_HANDLER", handler).replace(
             "// PRODUCTION_HTTP_HELPERS", _http_helpers(adapter, handler)
         )
+        harness = append_element_ancestry_interface(adapter, harness)
         with tempfile.TemporaryDirectory(prefix="connectivity-snapshot-http-") as temporary:
             output = Path(temporary)
             (output / "Harness.cs").write_text(harness, encoding="utf-8")

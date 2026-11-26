@@ -3,6 +3,16 @@
 from copy import deepcopy
 
 
+# Reviewed public catalogue expectations. Keep these independent of the live
+# registry so discovery tests still detect missing or duplicated registrations.
+CURRENT_MOCK_TOOL_COUNT = 129
+E3D_IDENTITY_TOOLS = frozenset({"e3d_element_ancestry"})
+MODELING_TEAM_TOOLS = frozenset({
+    "e3d_modeling_team_submit", "e3d_modeling_team_plan",
+    "e3d_modeling_team_execute", "e3d_modeling_team_status",
+})
+
+
 OPTIONAL_CHORD_TOOLS = frozenset({
     "e3d_primitive_mesh", "e3d_primitive_csg_mesh",
     "e3d_project_primitive_csg_drawing", "e3d_element_mesh",
@@ -40,6 +50,28 @@ CREATE_GUARDED_DESCRIPTION = (
     "does not prove all database constraints. A failed initialization attempts to remove only the new element; "
     "inspect cleanup and residual state before retrying."
 )
+TRANSFORM_EXPECTED_REVISION_SCHEMA = {
+    "type": "string", "pattern": "^[0-9a-fA-F]{64}$", "minLength": 64, "maxLength": 64,
+    "description": "64-hex revision from a preview of the same target and transform; required for execution.",
+}
+TRANSFORM_GUARDED_DESCRIPTION = (
+    "Preview a position and/or orientation change in an explicit SDK reference frame, converting to verified native storage coordinates. "
+    "A successful native preview returns a revision bound to the target state and submitted transform; pass it as expected_revision for execution. "
+    "Real writes require dry_run=false, that revision and command permission. The revisioned endpoint rejects stale target/frame/request state before setters; "
+    "older bridges return 404 and are never retried through the unguarded legacy route. Captures original values and attempts restoration on partial setter failure. "
+    "After attempted writes and any rollback, sends one Command.Update notification and verifies the requested fields, frame identity and CE again. "
+    "Inspect notification_update: callbacks may change database/UI state; completion does not prove spatial-map repair. write_applied and rollback_succeeded are pre-notification observations. "
+    "Notification failure never repeats writes or rollback. Does not select the element as CE."
+)
+
+
+def with_transform_additions(historical):
+    updated = deepcopy(historical)
+    if updated["name"] == "e3d_set_transform" and "expected_revision" not in updated["inputSchema"]["properties"]:
+        updated["inputSchema"]["properties"]["expected_revision"] = deepcopy(TRANSFORM_EXPECTED_REVISION_SCHEMA)
+        updated["inputSchema"]["allOf"] = deepcopy(CREATE_EXECUTION_REVISION_REQUIRED)
+        updated["description"] = TRANSFORM_GUARDED_DESCRIPTION
+    return updated
 
 OPTIONAL_MODELING_FIELDS = {
     "e3d_database_preflight": ("root_name", {
@@ -98,7 +130,7 @@ POST_0_2_1_PARAGON_TOOLS = {
     "e3d_paragon_reference_trace", "e3d_paragon_component_copy", "e3d_paragon_component_copy_status",
     "e3d_paragon_component_parameters_set", "e3d_paragon_component_parameters_status",
     "e3d_paragon_generate_from_standard", "e3d_paragon_component_create", "e3d_paragon_component_create_status",
-    "e3d_piping_route_create", "e3d_piping_route_verify", "e3d_modeling_team_plan", "e3d_modeling_team_execute",
+    "e3d_piping_route_create", "e3d_piping_route_verify", *MODELING_TEAM_TOOLS, *E3D_IDENTITY_TOOLS,
 }
 
 _MODELING_DESCRIPTION_EDITS = {
@@ -113,8 +145,10 @@ _MODELING_DESCRIPTION_EDITS = {
         ("A ready result is not a native edit preview or engineering approval. "
          "Create/copy revisions are obtained only by a later dry_run on their existing write tools.",
          "A ready result is not engineering approval."),
+        ("e3d_set_transform has no revision guard.",
+         "e3d_set_transform uses a native expected_revision guard; the separate e3d_modeling_team workflow can execute guarded transform tasks."),
         ("This tool never calls create/copy/transform write routes, PML, selection, display or capture.",
-         "This tool does not execute model writes, PML, selection, display or capture."),
+         "This planner remains read-only and does not execute model writes, PML, selection, display or capture."),
     ),
     "e3d_piping_route_plan": (
         ("Returns a proposed ordered create_element/set_attributes dry-run sequence only; every revision is null and no "
@@ -147,6 +181,7 @@ def with_modeling_additions(historical):
     identity = OPTIONAL_IDENTITY_FIELDS.get(name)
     if identity:
         updated["inputSchema"]["properties"]["limit"].update(identity["property_updates"]["limit"])
+    updated = with_transform_additions(updated)
     return updated
 
 

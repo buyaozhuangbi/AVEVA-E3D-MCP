@@ -14,6 +14,7 @@ import tempfile
 import unittest
 from xml.sax.saxutils import escape
 
+from http_contract_capabilities import append_element_ancestry_interface
 from test_model_validation_native_contract import block_end, extract_method
 
 
@@ -78,6 +79,7 @@ class ParagonEvidenceHttpContractTests(unittest.TestCase):
         # E3d21ModuleContext and catalogue schema readers remain unreferenced.
         names = {"ModuleContext.cs", "ParagonCatalogueSchema.cs", "ParagonCatalogueManifest.cs", "NativeDatabaseFaultState.cs",
                  "MessageCursor.cs", "EquipmentManifest.cs", "EquipmentChildSchema.cs", "PipingSpecificationReadRequest.cs", "TeamDatabaseIdentityManifest.cs", "ParagonComponentTemplate.cs", "ParagonReferenceTrace.cs", "ParagonComponentCopy.cs", "ParagonComponentParameters.cs", "ParagonComponentCreate.cs", "PipeMemberManifest.cs", "ModelEditInput.cs", "AttributeEditPolicy.cs"}
+        harness = append_element_ancestry_interface(adapter, harness)
         with tempfile.TemporaryDirectory(prefix="paragon-evidence-http-") as temporary:
             output = Path(temporary)
             (output / "Harness.cs").write_text(harness, encoding="utf-8")

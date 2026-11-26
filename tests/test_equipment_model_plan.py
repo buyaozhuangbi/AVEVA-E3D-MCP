@@ -309,7 +309,8 @@ class EquipmentModelPlanTests(unittest.TestCase):
         create, transform = result["steps"]
         self.assertIsNone(create["revision"]["native_token"])
         self.assertTrue(create["revision"]["required_for_execution"])
-        self.assertEqual(transform["revision"]["source"], "not_supported_by_e3d_set_transform")
+        self.assertEqual(transform["revision"]["source"], "not_requested")
+        self.assertTrue(transform["revision"]["required_for_execution"])
         self.assertEqual(transform["requested_transform"]["converted"]["status"], "complete")
         self.assertEqual(bridge.transform_calls[0][0], "=1/2")
         self.assertEqual(bridge.spatial_calls, [("=1/3", "WORLD")])
@@ -326,7 +327,8 @@ class EquipmentModelPlanTests(unittest.TestCase):
             "submitted": {"name": "/NEW", "attributes": {"HEIG": "100"}, "position": [10, 20, 30], "orientation": None},
         }})
         bridge.set_transform = Mock(return_value={**envelope, "result": {
-            **native, "element": {"refno": "=1/3"}, "submitted": {"position": [2, 3, 4], "orientation": None},
+            **native, "element": {"refno": "=1/3"}, "revision": "b" * 64,
+            "submitted": {"position": [2, 3, 4], "orientation": None},
         }})
         return bridge
 
@@ -347,6 +349,8 @@ class EquipmentModelPlanTests(unittest.TestCase):
         bridge.create_element.assert_called_once_with("=1/2", "BOX", "/NEW", {"HEIG": "100"},
             [10.0, 20.0, 30.0], None, None, "OWNER", True)
         self.assertEqual(transform["native_preview"]["status"], "prepared")
+        self.assertEqual(transform["revision"]["native_token"], revision)
+        self.assertEqual(transform["revision"]["source"], "native_dry_run")
         bridge.set_transform.assert_called_once_with("=1/3", [2.0, 3.0, 4.0], None, None, "OWNER", True)
 
     def test_context_drift_after_previews_withholds_the_revision(self):

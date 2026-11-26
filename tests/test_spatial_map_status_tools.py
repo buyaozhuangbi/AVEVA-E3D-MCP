@@ -1,5 +1,6 @@
 """Offline contracts for one explicit E3D21 database spatial-map observation."""
 from __future__ import annotations
+from catalog_compatibility import CURRENT_MOCK_TOOL_COUNT
 
 import io
 import json
@@ -29,7 +30,7 @@ class SpatialMapStatusToolsTests(unittest.TestCase):
 
     def test_discovery_is_strict_readonly_without_capture_and_uses_database_context(self):
         definitions = self.server._dispatch({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})["result"]["tools"]
-        self.assertEqual(len(definitions), 126)
+        self.assertEqual(len(definitions), CURRENT_MOCK_TOOL_COUNT)
         tool = next(item for item in definitions if item["name"] == "e3d_spatial_map_status")
         schema = tool["inputSchema"]
         self.assertEqual(set(schema["properties"]), {"database_number", "extract_number", "expected_context"})

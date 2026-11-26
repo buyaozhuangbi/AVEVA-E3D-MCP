@@ -24,7 +24,8 @@ class ModelCreateRevisionContractTests(unittest.TestCase):
                   "ModelPositionValue", "ModelOrientationValue", "ModelAddTransform", "ModelRequireOrientationMatches",
                   "ModelCeUnchanged", "ModelCaptureCeAfter", "ModelMemberReferences", "ModelRequireTypeAttribute"]
         parts = [extract(model, name) for name in names]
-        for name in ("CreateState", "CreateMemberIdentity", "ModelInitialAttribute"):
+        for name in ("CreateState", "CreateMemberIdentity", "ModelInitialAttribute",
+                     "CreateDatabaseIdentity", "CreateMdbIdentity"):
             start = model.index("    private sealed class " + name + "\n")
             opening = model.index("{", start)
             parts.append(model[start:block_end(model, opening)])

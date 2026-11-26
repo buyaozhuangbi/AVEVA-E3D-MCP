@@ -1,3 +1,4 @@
+from catalog_compatibility import CURRENT_MOCK_TOOL_COUNT
 from copy import deepcopy
 from pathlib import Path
 import struct
@@ -48,7 +49,7 @@ class PanelCurveAssemblyToolTests(unittest.TestCase):
 
     def test_tool_is_discoverable_and_explicitly_read_only(self):
         catalog = self.server._dispatch({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}})["result"]["tools"]
-        self.assertEqual(len(catalog), 126)
+        self.assertEqual(len(catalog), CURRENT_MOCK_TOOL_COUNT)
         definition = next(row for row in catalog if row["name"] == TOOL)
         self.assertTrue(definition["annotations"]["readOnlyHint"])
         self.assertEqual(definition["inputSchema"]["required"], ["targets"])

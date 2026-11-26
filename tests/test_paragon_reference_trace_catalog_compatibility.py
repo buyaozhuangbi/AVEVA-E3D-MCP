@@ -11,7 +11,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from aveva_e3d_mcp.config import Settings
 from aveva_e3d_mcp.tools import create_server
-from catalog_compatibility import with_modeling_additions
+from catalog_compatibility import CURRENT_MOCK_TOOL_COUNT, MODELING_TEAM_TOOLS, E3D_IDENTITY_TOOLS, with_modeling_additions
 
 
 BASELINE = ROOT / "tests/fixtures/paragon_reference_trace_catalog114.json"
@@ -27,12 +27,12 @@ class ParagonReferenceTraceCatalogCompatibilityTests(unittest.TestCase):
             "jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {},
         })["result"]["tools"]
         self.assertEqual(len(baseline), 114)
-        self.assertEqual(len(current), 126)
+        self.assertEqual(len(current), CURRENT_MOCK_TOOL_COUNT)
         old_by_name = {tool["name"]: tool for tool in baseline}
         current_by_name = {tool["name"]: tool for tool in current}
         self.assertEqual(len(old_by_name), 114)
-        self.assertEqual(len(current_by_name), 126)
-        self.assertEqual(set(current_by_name) - set(old_by_name), {"e3d_paragon_reference_trace", "e3d_paragon_component_copy", "e3d_paragon_component_copy_status", "e3d_paragon_component_parameters_set", "e3d_paragon_component_parameters_status", "e3d_paragon_generate_from_standard", "e3d_paragon_component_create", "e3d_paragon_component_create_status", "e3d_piping_route_create", "e3d_piping_route_verify", "e3d_modeling_team_plan", "e3d_modeling_team_execute"})
+        self.assertEqual(len(current_by_name), CURRENT_MOCK_TOOL_COUNT)
+        self.assertEqual(set(current_by_name) - set(old_by_name), {"e3d_paragon_reference_trace", "e3d_paragon_component_copy", "e3d_paragon_component_copy_status", "e3d_paragon_component_parameters_set", "e3d_paragon_component_parameters_status", "e3d_paragon_generate_from_standard", "e3d_paragon_component_create", "e3d_paragon_component_create_status", "e3d_piping_route_create", "e3d_piping_route_verify", *MODELING_TEAM_TOOLS, *E3D_IDENTITY_TOOLS})
         self.assertEqual(set(old_by_name) - set(current_by_name), set())
         for name, historical in old_by_name.items():
             with self.subTest(tool=name):

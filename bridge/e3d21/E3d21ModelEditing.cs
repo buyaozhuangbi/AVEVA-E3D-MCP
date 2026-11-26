@@ -9,7 +9,7 @@ using Aveva.Core.Utilities.Messaging;
 
 namespace E3d21AiBridge;
 
-public sealed partial class E3d21Context
+public sealed partial class E3d21Context : IRevisionedTransformContext
 {
     private const int ModelMembershipVerificationLimit = 10000;
     private readonly string createRevisionSession = Guid.NewGuid().ToString("N");
@@ -27,6 +27,21 @@ public sealed partial class E3d21Context
         internal Position NativePosition;
         internal Orientation NativeOrientation;
         internal bool CreatableNow;
+        internal CreateMdbIdentity MdbIdentity;
+    }
+
+    private sealed class CreateDatabaseIdentity
+    {
+        internal Db Database;
+        internal int Number, ExtractNumber;
+        internal string Name, Type;
+    }
+
+    private sealed class CreateMdbIdentity
+    {
+        internal readonly List<CreateDatabaseIdentity> Databases = new List<CreateDatabaseIdentity>();
+        internal readonly Dictionary<string, CreateDatabaseIdentity> ByKey =
+            new Dictionary<string, CreateDatabaseIdentity>(StringComparer.Ordinal);
     }
 
     private CreateState ModelCreateReadState(string parentTarget, string requestedType, string requestedName,
@@ -62,11 +77,22 @@ public sealed partial class E3d21Context
         Project project = Project.CurrentProject;
         if (mdb == null || project == null)
             throw new InvalidOperationException("Project/MDB context is unavailable.");
+        state.MdbIdentity = ModelCreateReadMdbIdentity(mdb);
+        CreateDatabaseIdentity firstDesign = state.MdbIdentity.Databases.FirstOrDefault(item =>
+            item.Type == DbType.Design.ToString());
+        if (firstDesign == null)
+            throw new InvalidOperationException("The current MDB has no verified Design database.");
         string worldReference = ModelReference(state.World.Ref);
+        if (worldReference != ModelCreateDatabaseWorld(firstDesign, state.MdbIdentity))
+            throw new InvalidOperationException("The selected Design WORLD does not match the first Design database in the current MDB.");
+        ModelCreateRequireDatabase(state.World, state.MdbIdentity, firstDesign);
         state.ParentRevision = PrimitiveHash(writer =>
         {
-            writer.Write("native-element-create-parent-v1");
+            writer.Write("native-element-create-parent-v2");
             writer.Write(createRevisionSession); writer.Write(project.Name); writer.Write(mdb.Name);
+            writer.Write(state.MdbIdentity.Databases.Count);
+            foreach (CreateDatabaseIdentity database in state.MdbIdentity.Databases)
+                ModelCreateWriteDatabaseIdentity(writer, database);
             writer.Write(state.ParentReference);
             writer.Write(state.Parent.GetElementType().ShortName);
             writer.Write(state.Parent.GetActualType().ShortName);
@@ -80,14 +106,14 @@ public sealed partial class E3d21Context
                 ModelCreateWriteNullableString(writer, member.Name);
             }
             writer.Write(state.CreatableNow);
-            ModelCreateWriteAncestorChain(writer, state.Parent, state.World, worldReference);
-            ModelCreateWriteAncestorChain(writer, state.Frame, state.World, worldReference);
+            ModelCreateWriteAncestorChain(writer, state.Parent, state.World, worldReference, state.MdbIdentity);
+            ModelCreateWriteAncestorChain(writer, state.Frame, state.World, worldReference, state.MdbIdentity);
             writer.Write(ModelReference(state.Frame.Ref));
             writer.Write(state.StorageFrame != null);
             if (state.StorageFrame != null)
             {
                 writer.Write(ModelReference(state.StorageFrame.Ref));
-                ModelCreateWriteAncestorChain(writer, state.StorageFrame, state.World, worldReference);
+                ModelCreateWriteAncestorChain(writer, state.StorageFrame, state.World, worldReference, state.MdbIdentity);
             }
         });
         var requestAttributes = state.InitialAttributes.ToDictionary(item => item.Canonical, item => item.Value,
@@ -156,61 +182,179 @@ public sealed partial class E3d21Context
         }).ToArray();
     }
 
+    private static string ModelCreateDatabaseKey(CreateDatabaseIdentity database)
+    {
+        return database.Number.ToString(CultureInfo.InvariantCulture) + ":" +
+            database.ExtractNumber.ToString(CultureInfo.InvariantCulture);
+    }
+
+    private static CreateDatabaseIdentity ModelCreateReadDatabaseIdentity(Db database)
+    {
+        ThrowIfNativeFaulted();
+        if (database == null) throw new InvalidOperationException("A create database identity is unavailable.");
+        var identity = new CreateDatabaseIdentity
+        {
+            Database = database, Number = NativeRead(() => database.Number),
+            ExtractNumber = NativeRead(() => database.ExtractNumber),
+            Name = NativeRead(() => database.Name), Type = NativeRead(() => database.Type).ToString()
+        };
+        if (identity.Number < 1 || identity.ExtractNumber < 0 || string.IsNullOrWhiteSpace(identity.Name) ||
+            !Enum.IsDefined(typeof(DbType), NativeRead(() => database.Type)))
+            throw new InvalidOperationException("A create database identity is incomplete or invalid.");
+        return identity;
+    }
+
+    private static CreateMdbIdentity ModelCreateReadMdbIdentity(MDB mdb)
+    {
+        Db[] databases = NativeRead(() => mdb.GetDBArray());
+        if (databases == null || databases.Length < 1 || databases.Length > ModelMembershipVerificationLimit)
+            throw new InvalidOperationException("Cannot verify the complete current MDB database membership within 10000 entries.");
+        var identity = new CreateMdbIdentity();
+        foreach (Db database in databases)
+        {
+            CreateDatabaseIdentity item = ModelCreateReadDatabaseIdentity(database);
+            string key = ModelCreateDatabaseKey(item);
+            if (identity.ByKey.ContainsKey(key))
+                throw new InvalidOperationException("The current MDB has duplicate database/extract identities.");
+            identity.Databases.Add(item); identity.ByKey.Add(key, item);
+        }
+        return identity;
+    }
+
+    private static void ModelCreateWriteDatabaseIdentity(BinaryWriter writer, CreateDatabaseIdentity database)
+    {
+        writer.Write(database.Number); writer.Write(database.ExtractNumber);
+        writer.Write(database.Name); writer.Write(database.Type);
+    }
+
+    private static CreateDatabaseIdentity ModelCreateRequireDatabase(DbElement element,
+        CreateMdbIdentity mdb, CreateDatabaseIdentity expected)
+    {
+        CreateDatabaseIdentity observed = ModelCreateReadDatabaseIdentity(NativeRead(() => element.Db));
+        CreateDatabaseIdentity member;
+        if (!mdb.ByKey.TryGetValue(ModelCreateDatabaseKey(observed), out member) ||
+            observed.Name != member.Name || observed.Type != member.Type || observed.Type != DbType.Design.ToString())
+            throw new InvalidOperationException("A create parent/frame database is not a verified Design member of the current MDB.");
+        // E3D21 resolves DbElement.Db through CurrentMDB.GetDB(number). Its extract
+        // is not independent evidence when that number occurs more than once.
+        if (mdb.Databases.Count(item => item.Number == observed.Number) != 1)
+            throw new InvalidOperationException("A referenced create database number has ambiguous extracts in the current MDB.");
+        if (expected != null && ModelCreateDatabaseKey(member) != ModelCreateDatabaseKey(expected))
+            throw new InvalidOperationException("A non-WORLD create ancestor crosses database/extract identity.");
+        string observedWorld = ModelCreateWorldReference(NativeRead(() => observed.Database.World));
+        string memberWorld = ModelCreateWorldReference(NativeRead(() => member.Database.World));
+        if (observedWorld != memberWorld)
+            throw new InvalidOperationException("A create database wrapper disagrees with the current MDB database WORLD.");
+        return member;
+    }
+
+    private static string ModelCreateWorldReference(DbElement world)
+    {
+        if (!IsUsable(world) || NativeRead(() => world.DbType) != DbType.Design)
+            throw new InvalidOperationException("A create database WORLD is unavailable or outside Design.");
+        int[] reference = NativeRead(() => world.Ref);
+        DbElementType type = NativeRead(() => world.GetElementType());
+        if (!ModelEditInput.IsReferencePair(reference) || reference[1] != 0 || type == null)
+            throw new InvalidOperationException("A create database WORLD lacks a valid raw WORLD reference and type.");
+        string shortName = NativeRead(() => type.ShortName);
+        if (!(shortName == "WORL" || shortName == "WORLD"))
+            throw new InvalidOperationException("A create database WORLD lacks a valid raw WORLD reference and type.");
+        // Local E3D21 observations returned IsWorld=true for SITE and false
+        // for physical WORL; the flag's exact native semantics remain unknown.
+        // Match the explicit type and exact owning database World reference.
+        Db database = NativeRead(() => world.Db);
+        if (database == null)
+            throw new InvalidOperationException("A create database WORLD has no verified owning database.");
+        DbElement databaseWorld = NativeRead(() => database.World);
+        if (!IsUsable(databaseWorld) || NativeRead(() => databaseWorld.DbType) != DbType.Design)
+            throw new InvalidOperationException("A create database WORLD is unavailable from its owning database.");
+        int[] databaseReference = NativeRead(() => databaseWorld.Ref);
+        if (!ModelEditInput.IsReferencePair(databaseReference) || databaseReference[1] != 0 ||
+            !reference.SequenceEqual(databaseReference))
+            throw new InvalidOperationException("A create WORLD reference does not match its exact owning database WORLD.");
+        return ModelReference(reference);
+    }
+
+    private static string ModelCreateDatabaseWorld(CreateDatabaseIdentity database, CreateMdbIdentity mdb)
+    {
+        DbElement world = NativeRead(() => database.Database.World);
+        string reference = ModelCreateWorldReference(world);
+        ModelCreateRequireDatabase(world, mdb, database);
+        return reference;
+    }
+
     private static void ModelCreateWriteAncestorChain(BinaryWriter writer, DbElement start, DbElement world,
-        string worldReference)
+        string worldReference, CreateMdbIdentity mdb)
     {
         var seen = new HashSet<string>(StringComparer.Ordinal);
         DbElement current = start;
-        var worldQualifier = new DbQualifier { wrtQualifier = world };
+        CreateDatabaseIdentity startDatabase = ModelCreateRequireDatabase(start, mdb, null);
+        CreateDatabaseIdentity worldDatabase = ModelCreateRequireDatabase(world, mdb, null);
+        string physicalWorld = ModelCreateDatabaseWorld(startDatabase, mdb);
+        ModelCreateWriteDatabaseIdentity(writer, startDatabase);
+        writer.Write(physicalWorld); writer.Write(worldReference);
+        var worldQualifier = new DbQualifier();
+        NativeWrite(() => worldQualifier.wrtQualifier = world);
         for (int depth = 0; depth < 1024; depth++)
         {
             ThrowIfNativeFaulted();
-            if (!IsUsable(current) || current.DbType != DbType.Design)
+            if (!IsUsable(current) || NativeRead(() => current.DbType) != DbType.Design)
                 throw new InvalidOperationException("A create parent/frame ancestor is invalid or outside Design.");
-            string reference = ModelReference(current.Ref);
+            string reference = ModelReference(NativeRead(() => current.Ref));
             if (!seen.Add(reference))
                 throw new InvalidOperationException("A cycle was found in the create parent/frame ancestor chain.");
-            DbElementType baseType = current.GetElementType();
-            DbElementType actualType = current.GetActualType();
-            writer.Write(reference); writer.Write(baseType.ShortName); writer.Write(actualType.ShortName);
-            if (reference == worldReference)
+            DbElementType baseType = NativeRead(() => current.GetElementType());
+            DbElementType actualType = NativeRead(() => current.GetActualType());
+            writer.Write(reference);
+            string baseShortName = NativeRead(() => baseType.ShortName);
+            writer.Write(baseShortName);
+            writer.Write(NativeRead(() => actualType.ShortName));
+            if (baseShortName == "WORL" || baseShortName == "WORLD")
             {
-                if (!baseType.IsWorld)
-                    throw new InvalidOperationException("The selected Design WORLD identity does not resolve to a WORLD element.");
-                writer.Write("design-world");
+                string endpoint = ModelCreateWorldReference(current);
+                CreateDatabaseIdentity endpointDatabase = ModelCreateRequireDatabase(current, mdb, null);
+                bool selectedWorld = endpoint == worldReference &&
+                    ModelCreateDatabaseKey(endpointDatabase) == ModelCreateDatabaseKey(worldDatabase);
+                bool databaseWorld = endpoint == physicalWorld &&
+                    ModelCreateDatabaseKey(endpointDatabase) == ModelCreateDatabaseKey(startDatabase);
+                if (!selectedWorld && !databaseWorld)
+                    throw new InvalidOperationException("The create parent/frame ancestry reached a WORLD outside its verified MDB database.");
+                ModelCreateWriteDatabaseIdentity(writer, endpointDatabase);
+                writer.Write("verified-design-world");
                 return;
             }
-            if (baseType.IsWorld)
-                throw new InvalidOperationException("The create parent/frame ancestry reached a different WORLD than the active MDB.");
-            bool hasPosition = current.IsAttributeValid(DbAttributeInstance.POS);
-            bool hasOrientation = current.IsAttributeValid(DbAttributeInstance.ORI);
+            ModelCreateRequireDatabase(current, mdb, startDatabase);
+            bool hasPosition = NativeRead(() => current.IsAttributeValid(DbAttributeInstance.POS));
+            bool hasOrientation = NativeRead(() => current.IsAttributeValid(DbAttributeInstance.ORI));
             writer.Write(hasPosition); writer.Write(hasOrientation);
             if (hasPosition)
             {
-                Position native = current.GetPosition(DbAttributeInstance.POS);
-                Position inWorld = current.GetPosition(DbAttributeInstance.POS, worldQualifier);
+                Position native = NativeRead(() => current.GetPosition(DbAttributeInstance.POS));
+                Position inWorld = NativeRead(() => current.GetPosition(DbAttributeInstance.POS, worldQualifier));
                 if (native == null || inWorld == null)
                     throw new InvalidOperationException("A parent/frame ancestor position could not be read in native and WORLD frames.");
-                ModelCreateWriteVector(writer, FiniteVector(native.X, native.Y, native.Z));
-                ModelCreateWriteVector(writer, FiniteVector(inWorld.X, inWorld.Y, inWorld.Z));
+                ModelCreateWriteVector(writer, FiniteVector(NativeRead(() => native.X),
+                    NativeRead(() => native.Y), NativeRead(() => native.Z)));
+                ModelCreateWriteVector(writer, FiniteVector(NativeRead(() => inWorld.X),
+                    NativeRead(() => inWorld.Y), NativeRead(() => inWorld.Z)));
             }
             if (hasOrientation)
             {
-                Orientation native = current.GetOrientation(DbAttributeInstance.ORI);
-                Orientation inWorld = current.GetOrientation(DbAttributeInstance.ORI, worldQualifier);
+                Orientation native = NativeRead(() => current.GetOrientation(DbAttributeInstance.ORI));
+                Orientation inWorld = NativeRead(() => current.GetOrientation(DbAttributeInstance.ORI, worldQualifier));
                 if (native == null || inWorld == null)
                     throw new InvalidOperationException("A parent/frame ancestor orientation could not be read in native and WORLD frames.");
                 ModelCreateWriteOrientation(writer, native);
                 ModelCreateWriteOrientation(writer, inWorld);
             }
-            DbAttribute[] rules = current.GetAttributesWithRules();
+            DbAttribute[] rules = NativeRead(() => current.GetAttributesWithRules());
             if (rules == null)
                 throw new InvalidOperationException("A create parent/frame ancestor rule list is unreadable.");
-            string[] names = rules.Select(attribute => attribute.ShortName)
+            string[] names = rules.Select(attribute => NativeRead(() => attribute.ShortName))
                 .OrderBy(value => value, StringComparer.Ordinal).ToArray();
             writer.Write(names.Length);
             foreach (string name in names) writer.Write(name);
-            current = current.Owner;
+            current = NativeRead(() => current.Owner);
         }
         throw new InvalidOperationException("Create parent/frame ancestry exceeds 1024 elements before reaching WORLD.");
     }
@@ -228,7 +372,10 @@ public sealed partial class E3d21Context
     {
         writer.Write(value != null);
         if (value != null)
-            foreach (Direction direction in new[] { value.XDir(), value.YDir(), value.ZDir() })
+            foreach (Direction direction in new[]
+            {
+                NativeRead(() => value.XDir()), NativeRead(() => value.YDir()), NativeRead(() => value.ZDir())
+            })
                 ModelCreateWriteVector(writer, DirectionVector(direction));
     }
 
@@ -442,8 +589,25 @@ public sealed partial class E3d21Context
 
     public object SetTransform(string refno, double[] position, double[] xAxis, double[] yAxis, string wrt, bool dryRun)
     {
+        return SetTransformCore(refno, position, xAxis, yAxis, wrt, null, dryRun, false);
+    }
+
+    public object SetTransformRevisioned(string refno, double[] position, double[] xAxis, double[] yAxis,
+        string wrt, string expectedRevision, bool dryRun)
+    {
+        return SetTransformCore(refno, position, xAxis, yAxis, wrt, expectedRevision, dryRun, true);
+    }
+
+    private object SetTransformCore(string refno, double[] position, double[] xAxis, double[] yAxis,
+        string wrt, string expectedRevision, bool dryRun, bool revisioned)
+    {
         string target = ModelEditInput.ExplicitReference(refno, "refno");
         ModelEditInput input = new ModelEditInput(position, xAxis, yAxis, wrt, true);
+        string expected = expectedRevision == null ? null : expectedRevision.ToLowerInvariant();
+        if (revisioned && ((expected != null && (expected.Length != 64 ||
+            expected.Any(c => !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f')))) ||
+            (!dryRun && expected == null)))
+            throw new ArgumentException("Execution requires a canonical 64-character hexadecimal expected_revision.", "expectedRevision");
         string command = "database-set-transform " + target;
         if (dryRun ? IsCommandActive() : !TryBeginCommand(command)) return BusyResult(command);
         try
@@ -456,6 +620,12 @@ public sealed partial class E3d21Context
                 result["write_applied"] = false;
                 result["rollback_attempted"] = false;
                 result["rollback_succeeded"] = null;
+                if (revisioned)
+                {
+                    result["revision"] = null;
+                    result["revision_conflict"] = false;
+                    result["revision_scope"] = "E3D bridge session/project/MDB and ordered database/extract identities, current CE, exact target/type/name/unique Design database, OWNER/requested/storage frame identities, current target POS/ORI in native and requested frames, frame conversion, settable evidence and the exact requested transform. The comparison is not a database lock.";
+                }
                 var notification = new Dictionary<string, object>
                 {
                     ["attempted"] = false, ["completed"] = false, ["error"] = null,
@@ -521,6 +691,17 @@ public sealed partial class E3d21Context
                     {
                         ["position"] = input.Position, ["orientation"] = ModelSubmittedOrientation(input)
                     };
+                    if (revisioned)
+                    {
+                        string currentRevision = ModelTransformRevision(target, input);
+                        result["revision"] = currentRevision;
+                        if (!dryRun && !string.Equals(expected, currentRevision, StringComparison.Ordinal))
+                        {
+                            result["revision_conflict"] = true;
+                            result["retry_safe"] = true;
+                            throw new InvalidOperationException("expected_revision does not match the current target, frame or transform request. Preview again before writing.");
+                        }
+                    }
                     if (!dryRun)
                     {
                         result["write_attempted"] = true;
@@ -673,6 +854,122 @@ public sealed partial class E3d21Context
         finally { if (!dryRun) EndCommand(); }
     }
 
+    private string ModelTransformRevision(string target, ModelEditInput input)
+    {
+        ThrowIfNativeFaulted();
+        Project project = NativeRead(() => Project.CurrentProject);
+        MDB mdb = CurrentMdb();
+        if (project == null || mdb == null)
+            throw new InvalidOperationException("Project/MDB context is unavailable for a guarded transform.");
+        string projectName = NativeRead(() => project.Name);
+        string mdbName = NativeRead(() => mdb.Name);
+        if (string.IsNullOrWhiteSpace(projectName) || string.IsNullOrWhiteSpace(mdbName))
+            throw new InvalidOperationException("Project/MDB identity is incomplete for a guarded transform.");
+        string ce = ModelCurrentReference();
+        CreateMdbIdentity mdbIdentity = ModelCreateReadMdbIdentity(mdb);
+        DbElement element = ModelRequireElement(target);
+        if (NativeRead(() => element.DbType) != DbType.Design)
+            throw new InvalidOperationException("target must be in a Design database.");
+        CreateDatabaseIdentity elementDatabase = ModelCreateRequireDatabase(element, mdbIdentity, null);
+        // A transform revision is target-scoped.  The active MDB may contain
+        // several Design databases, so bind the WORLD identity to the target's
+        // verified database instead of whichever Design database happens to be
+        // first in MDB order.
+        string worldReference = ModelCreateDatabaseWorld(elementDatabase, mdbIdentity);
+        DbElement owner = NativeRead(() => element.Owner);
+        DbElement frame = ModelFrame(input.Wrt, owner);
+        ModelRequireStableFrame(element, frame);
+        DbElement storageFrame = ModelStorageFrame(owner);
+        CreateDatabaseIdentity ownerDatabase = ModelCreateRequireDatabase(owner, mdbIdentity, null);
+        CreateDatabaseIdentity frameDatabase = ModelCreateRequireDatabase(frame, mdbIdentity, null);
+        CreateDatabaseIdentity storageDatabase = ModelCreateRequireDatabase(storageFrame, mdbIdentity, null);
+        ModelRequireStorageFrame(element, storageFrame, input);
+        if (input.Position != null) ModelRequireSettable(element, DbAttributeInstance.POS);
+        if (input.XAxis != null) ModelRequireSettable(element, DbAttributeInstance.ORI);
+
+        string elementReference = ModelReference(NativeRead(() => element.Ref));
+        string ownerReference = ModelReference(NativeRead(() => owner.Ref));
+        string frameReference = ModelReference(NativeRead(() => frame.Ref));
+        string storageReference = ModelReference(NativeRead(() => storageFrame.Ref));
+        if (string.IsNullOrEmpty(elementReference) || string.IsNullOrEmpty(ownerReference) ||
+            string.IsNullOrEmpty(frameReference) || string.IsNullOrEmpty(storageReference))
+            throw new InvalidOperationException("A guarded transform identity reference is unavailable.");
+
+        Position nativePosition = null, framedPosition = null;
+        Orientation nativeOrientation = null, framedOrientation = null;
+        var qualifier = new DbQualifier { wrtQualifier = frame };
+        if (input.Position != null)
+        {
+            nativePosition = NativeRead(() => element.GetPosition(DbAttributeInstance.POS));
+            framedPosition = NativeRead(() => element.GetPosition(DbAttributeInstance.POS, qualifier));
+            if (nativePosition == null || framedPosition == null)
+                throw new InvalidOperationException("The SDK did not return original native/requested-frame POS for a guarded transform.");
+        }
+        if (input.XAxis != null)
+        {
+            nativeOrientation = NativeRead(() => element.GetOrientation(DbAttributeInstance.ORI));
+            framedOrientation = NativeRead(() => element.GetOrientation(DbAttributeInstance.ORI, qualifier));
+            if (nativeOrientation == null || framedOrientation == null)
+                throw new InvalidOperationException("The SDK did not return original native/requested-frame ORI for a guarded transform.");
+        }
+        ModelEditFrame storageTransform = ModelStorageTransform(storageFrame, frame);
+        ModelEditInput nativeInput = storageTransform.ToNative(input);
+        DbElementType elementType = NativeRead(() => element.GetElementType());
+        DbElementType elementActualType = NativeRead(() => element.GetActualType());
+        string type = NativeRead(() => elementType.ShortName);
+        string actualType = NativeRead(() => elementActualType.ShortName);
+        bool nameValid = NativeRead(() => element.IsAttributeValid(DbAttributeInstance.NAME));
+        string name = nameValid ? NativeRead(() => element.GetString(DbAttributeInstance.NAME)) : null;
+        bool positionValid = NativeRead(() => element.IsAttributeValid(DbAttributeInstance.POS));
+        bool positionSettable = positionValid && NativeRead(() => element.IsAttributeSetable(DbAttributeInstance.POS));
+        bool orientationValid = NativeRead(() => element.IsAttributeValid(DbAttributeInstance.ORI));
+        bool orientationSettable = orientationValid && NativeRead(() => element.IsAttributeSetable(DbAttributeInstance.ORI));
+
+        return PrimitiveHash(writer =>
+        {
+            writer.Write("native-element-transform-revision-v1");
+            writer.Write(createRevisionSession); writer.Write(projectName); writer.Write(mdbName); writer.Write(ce ?? "");
+            writer.Write(mdbIdentity.Databases.Count);
+            foreach (CreateDatabaseIdentity database in mdbIdentity.Databases)
+                ModelCreateWriteDatabaseIdentity(writer, database);
+            writer.Write(elementReference); writer.Write(type ?? ""); writer.Write(actualType ?? "");
+            ModelCreateWriteNullableString(writer, name);
+            ModelCreateWriteDatabaseIdentity(writer, elementDatabase);
+            writer.Write(ownerReference); ModelCreateWriteDatabaseIdentity(writer, ownerDatabase);
+            writer.Write(frameReference); ModelCreateWriteDatabaseIdentity(writer, frameDatabase);
+            writer.Write(storageReference); ModelCreateWriteDatabaseIdentity(writer, storageDatabase);
+            writer.Write(worldReference); writer.Write(positionValid); writer.Write(positionSettable);
+            writer.Write(orientationValid); writer.Write(orientationSettable);
+            writer.Write(input.Wrt); ModelCreateWriteVector(writer, input.Position);
+            ModelCreateWriteVector(writer, input.XAxis); ModelCreateWriteVector(writer, input.YAxis);
+            ModelCreateWriteVector(writer, nativeInput.Position);
+            ModelCreateWriteVector(writer, nativeInput.XAxis); ModelCreateWriteVector(writer, nativeInput.YAxis);
+            ModelCreateWriteNullableString(writer, input.Position == null ? null : elementReference);
+            if (input.Position != null)
+            {
+                ModelCreateWriteVector(writer, FiniteVector(NativeRead(() => nativePosition.X),
+                    NativeRead(() => nativePosition.Y), NativeRead(() => nativePosition.Z)));
+                ModelCreateWriteVector(writer, FiniteVector(NativeRead(() => framedPosition.X),
+                    NativeRead(() => framedPosition.Y), NativeRead(() => framedPosition.Z)));
+            }
+            if (input.XAxis != null)
+            {
+                ModelCreateWriteOrientation(writer, nativeOrientation);
+                ModelCreateWriteOrientation(writer, framedOrientation);
+            }
+            if (storageReference != frameReference)
+            {
+                Position origin = NativeRead(() => storageFrame.GetPosition(DbAttributeInstance.POS, qualifier));
+                Orientation rotation = NativeRead(() => storageFrame.GetOrientation(DbAttributeInstance.ORI, qualifier));
+                if (origin == null || rotation == null)
+                    throw new InvalidOperationException("The SDK did not return the complete frame conversion used by a guarded transform.");
+                ModelCreateWriteVector(writer, FiniteVector(NativeRead(() => origin.X),
+                    NativeRead(() => origin.Y), NativeRead(() => origin.Z)));
+                ModelCreateWriteOrientation(writer, rotation);
+            }
+        });
+    }
+
     private sealed class ModelInitialAttribute
     {
         internal DbAttribute Attribute;
@@ -759,11 +1056,17 @@ public sealed partial class E3d21Context
             ThrowIfNativeFaulted();
             if (!IsUsable(current))
                 throw new InvalidOperationException("A usable native positioning frame was not found; nothing was written.");
-            if (!seen.Add(ModelReference(current.Ref)))
+            if (!seen.Add(ModelReference(NativeRead(() => current.Ref))))
                 throw new InvalidOperationException("A cycle was found in the native positioning frame hierarchy.");
-            if (current.GetElementType().IsWorld) return current;
-            bool hasPosition = current.IsAttributeValid(DbAttributeInstance.POS);
-            bool hasOrientation = current.IsAttributeValid(DbAttributeInstance.ORI);
+            DbElementType type = NativeRead(() => current.GetElementType());
+            string shortName = NativeRead(() => type.ShortName);
+            if (shortName == "WORL" || shortName == "WORLD")
+            {
+                ModelCreateWorldReference(current);
+                return current;
+            }
+            bool hasPosition = NativeRead(() => current.IsAttributeValid(DbAttributeInstance.POS));
+            bool hasOrientation = NativeRead(() => current.IsAttributeValid(DbAttributeInstance.ORI));
             if (hasPosition && hasOrientation) return current;
             if (hasPosition || hasOrientation)
                 throw new InvalidOperationException("The native positioning ancestor has an incomplete POS/ORI frame; conversion is unavailable and nothing was written.");
@@ -823,22 +1126,28 @@ public sealed partial class E3d21Context
         ThrowIfNativeFaulted();
         // A frame owned by the edited element moves with the edit, invalidating
         // the original-value and rollback WRT contract. Check before any setter.
-        string targetRef = ModelReference(target.Ref);
+        string targetRef = ModelReference(NativeRead(() => target.Ref));
         var seen = new HashSet<string>(StringComparer.Ordinal);
         DbElement current = frame;
         for (int depth = 0; depth < 1024; depth++)
         {
             ThrowIfNativeFaulted();
-            if (current == null || current.IsNull) return;
-            if (!current.IsValid) throw new InvalidOperationException("Cannot verify that the reference frame is independent of the edited element.");
-            string currentRef = ModelReference(current.Ref);
+            if (current == null || NativeRead(() => current.IsNull)) return;
+            if (!NativeRead(() => current.IsValid)) throw new InvalidOperationException("Cannot verify that the reference frame is independent of the edited element.");
+            string currentRef = ModelReference(NativeRead(() => current.Ref));
             if (currentRef == targetRef)
                 throw new ArgumentException("wrt cannot be the edited element or one of its descendants; use OWNER, WORLD, or an independent element.");
             if (!seen.Add(currentRef)) throw new InvalidOperationException("A cycle was found in the reference frame owner hierarchy.");
             // E3D represents the Design WORLD as REF = database/0. It is the
             // stable root; its Owner may be a null/system placeholder and must
             // not be traversed or treated as a malformed reference.
-            if (current.GetElementType().IsWorld) return;
+            DbElementType type = NativeRead(() => current.GetElementType());
+            string shortName = NativeRead(() => type.ShortName);
+            if (shortName == "WORL" || shortName == "WORLD")
+            {
+                ModelCreateWorldReference(current);
+                return;
+            }
             current = NativeRead(() => current.Owner);
         }
         throw new InvalidOperationException("Reference frame owner hierarchy exceeds the verification limit.");

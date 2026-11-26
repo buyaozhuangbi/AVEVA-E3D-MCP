@@ -1,5 +1,6 @@
 """Public composition discovery, exports and stage-failure evidence."""
 from __future__ import annotations
+from catalog_compatibility import CURRENT_MOCK_TOOL_COUNT
 
 import copy
 import sys
@@ -48,7 +49,7 @@ class CompositeSheetToolTests(unittest.TestCase):
 
     def test_catalog_exposes_required_sheet_and_fixed_views_with_default_third_angle(self):
         catalog = {row["name"]: row for row in self.fixture.rpc("tools/list", {})["tools"]}
-        self.assertEqual(len(catalog), 126)
+        self.assertEqual(len(catalog), CURRENT_MOCK_TOOL_COUNT)
         tool = catalog[self.TOOL]
         self.assertTrue(tool["annotations"]["readOnlyHint"])
         schema = tool["inputSchema"]

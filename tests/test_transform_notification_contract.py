@@ -17,6 +17,12 @@ class TransformNotificationContractTests(unittest.TestCase):
         source = (BRIDGE / "E3d21ModelEditing.cs").read_text(encoding="utf-8-sig")
         transform = extract(source.replace("public object SetTransform(", "private object SetTransform("), "SetTransform")
         methods = [transform.replace("private object SetTransform(", "public object SetTransform(")]
+        # SetTransform now delegates to the shared guarded core. This legacy
+        # notification contract deliberately exercises the unrevisioned path;
+        # keep the revision fingerprint out of this harness while compiling
+        # the shared method body.
+        methods.append(extract(source, "SetTransformCore"))
+        methods.append("private string ModelTransformRevision(string target, ModelEditInput input) { return null; }")
         methods.extend(extract(source, name) for name in (
             "ModelEditResult", "ModelReference", "ModelRequireSettable", "ModelRequireSetter",
             "ModelWritePosition", "ModelWriteOrientation", "ModelPosition", "ModelOrientation",

@@ -1,5 +1,6 @@
 """Offline MCP contracts for the native clash engine; never requests E3D."""
 from __future__ import annotations
+from catalog_compatibility import CURRENT_MOCK_TOOL_COUNT
 
 import io
 import json
@@ -41,7 +42,7 @@ class NativeClashToolsTests(unittest.TestCase):
 
     def test_discovery_is_non_readonly_default_preview_and_has_no_capture_or_version(self):
         discovery = self.server._dispatch({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})["result"]["tools"]
-        self.assertEqual(len(discovery), 126)
+        self.assertEqual(len(discovery), CURRENT_MOCK_TOOL_COUNT)
         definitions = {item["name"]: item for item in discovery}
         tool = definitions["e3d_native_clash_check"]
         self.assertFalse(tool["annotations"]["readOnlyHint"])

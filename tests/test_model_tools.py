@@ -291,13 +291,14 @@ class ModelToolTests(unittest.TestCase):
                 self.assertFalse(preview.get("isError", False), preview)
                 self.assertIs(edit.call_args.args[-1], True)
                 write_arguments = {**arguments, "dry_run": False}
-                if tool == "e3d_create_element":
-                    write_arguments["expected_revision"] = "a" * 64
+                # Both guarded model writes require the revision returned by
+                # their preview.  Keep the test's mock receipt deterministic;
+                # the native bridge validates the token format before POST.
+                write_arguments["expected_revision"] = "a" * 64
                 written = self._call(tool, write_arguments, server=enabled)
                 self.assertFalse(written.get("isError", False), written)
                 self.assertIs(edit.call_args.args[-1], False)
-                if tool == "e3d_create_element":
-                    self.assertEqual(edit.call_args.kwargs, {"expected_revision": "a" * 64})
+                self.assertEqual(edit.call_args.kwargs, {"expected_revision": "a" * 64})
                 self.assertEqual(edit.call_count, 2)
 
     def test_invalid_preview_flags_and_frames_are_rejected_before_bridge(self) -> None:

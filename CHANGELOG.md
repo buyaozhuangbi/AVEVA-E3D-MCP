@@ -2,6 +2,20 @@
 
 按版本记录用户可见的能力变化。后续版本只在本文件新增更新记录；README 保持为长期有效的项目能力介绍。
 
+## v0.2.4 — 2026-11-26
+
+- **各 Agent 可分别交提案**：新增 `e3d_modeling_team_submit`；协调方按明确的 Agent 名单封存，再按冻结引用执行。计划保留完整任务和原始序号，支持跨 Agent 父项/复制来源依赖；封存后拒绝替换任务或混用整包接口，重复提交、封存和执行分别去重。
+- **查询工作流进度和回执**：新增只读 `e3d_modeling_team_status`，按 workflow ID 查询收件、封存、已完成任务和当前任务快照；明确区分写入派发、收到原生回执、核实成功和结果不确定。收件与状态查询不访问 E3D，记录只在同一 MCP 进程内共享。
+- **多 Agent workflow 支持变换任务**：新增 `element_transform`，可移动或定向既有目标，也可用 `target_task_id` 定位前序任务创建或复制的新元素。每项任务使用唯一 `sequence`，变换逐项重新预览、提交 revision，并核对 Command.Update、读回、坐标框架和 CE。[工作流说明](docs/modeling-team-workflows.md)
+- **变换写入增加原生 revision 保护**：`e3d_set_transform` 的预览返回绑定目标、坐标系、MDB 和请求值的 64 位十六进制 token；执行时必须携带同一 token，过期时在 setter 前拒绝。独立 revisioned HTTP 路由不会向旧 bridge 的无保护接口回退；多 Design 数据库时绑定目标所属数据库的 WORLD。[变换 revision 说明](docs/element-transform-revision.md)
+- **新增原生祖先与 MDB 身份查询**：`e3d_element_ancestry` 在单次只读回调中读取明确 REF 的 OWNER 链、raw/格式化 REF、Design WORLD 和有界 MDB 数据库清单；保留 extract 歧义和部分身份的未知状态。管道/设备创建 revision 同步核验完整 MDB、祖先和数据库/extract 身份，在分配元素前拒绝歧义。[祖先查询说明](docs/element-ancestry.md)
+- **修正 E3D 2.1 的 WORLD 识别**：根据实机观察保留 `IsWorld` 原始值，但祖先遍历、创建预检和变换框架按类型短名、原始 REF 与数据库 WORLD 身份判定，避免提前停在 SITE 或拒绝真正的 WORL。
+- **准确报告失败、中断和上下文变化**：保留原生失败预览、已核实 REF 和原生写入回执，区分尚未派发、写入中断、任务间中断及上下文未核实。所有任务核实后再次比较 session、build、project、MDB 和最后已核实的 CE；读取失败报告 `workflow_context_unverified`，观察到漂移报告 `workflow_context_changed`，不会误报完成或重放写入。
+- **收紧原生故障屏障**：祖先查询的元素有效性、变换 revision 的属性/类型/坐标读取，以及共享 WORLD 和祖先身份预检均逐次检查原生故障；前一次 SDK 读取锁存故障后立即停止后续读取。
+- **固定默认测试收集目录**：直接运行 `python -B -m pytest -q` 只收集 `tests/`，避免本地历史实验副本引发同名模块冲突。mock 工具目录增加到 129 项。
+
+[查看 v0.2.4 源码](https://github.com/buyaozhuangbi/AVEVA-E3D-MCP/tree/v0.2.4) · [比较 v0.2.3 到 v0.2.4](https://github.com/buyaozhuangbi/AVEVA-E3D-MCP/compare/v0.2.3...v0.2.4)
+
 ## v0.2.3 — 2026-11-25
 
 - **支持多 Agent 协同建模**：新增 `e3d_modeling_team_plan` 和 `e3d_modeling_team_execute`，把多个 Agent 准备的管道或设备任务合并为一个有依赖顺序的 workflow。

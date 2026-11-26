@@ -1,4 +1,5 @@
 """Exercise the dedicated display-removal MCP boundary without loading E3D."""
+from catalog_compatibility import CURRENT_MOCK_TOOL_COUNT
 from contextlib import ExitStack
 from io import BytesIO, StringIO
 import json
@@ -41,7 +42,7 @@ class DrawlistRemovalToolTests(unittest.TestCase):
 
     def test_discovery_schema_permission_annotations_and_capture(self):
         tools = {tool["name"]: tool for tool in self.rpc("tools/list", {})["tools"]}
-        self.assertEqual(len(tools), 126)
+        self.assertEqual(len(tools), CURRENT_MOCK_TOOL_COUNT)
         self.assertEqual(sum("capture_after" in tool["inputSchema"]["properties"] for tool in tools.values()), 19)
         tool = tools["e3d_remove_drawlist_member"]
         self.assertEqual(tool["annotations"], {"readOnlyHint": False, "destructiveHint": False,

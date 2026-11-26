@@ -45,6 +45,7 @@
     <Compile Include="E3d21CoordinateTransform.cs" />
     <Compile Include="CoordinateTransformMath.cs" />
     <Compile Include="E3d21ElementAccess.cs" />
+    <Compile Include="E3d21ElementAncestry.cs" />
     <Compile Include="E3d21GeometryVolume.cs" />
     <Compile Include="E3d21ConnectionPoints.cs" />
     <Compile Include="E3d21ConnectionTrace.cs" />

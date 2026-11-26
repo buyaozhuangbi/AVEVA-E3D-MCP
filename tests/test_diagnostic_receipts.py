@@ -4,6 +4,7 @@ The compact-workflow fixture is synthetic and shared with the projection tests;
 these tests never load historical artifacts, MCP registration, or E3D state.
 """
 from __future__ import annotations
+from catalog_compatibility import CURRENT_MOCK_TOOL_COUNT
 
 import copy
 import json
@@ -359,7 +360,7 @@ class DiagnosticReceiptToolTests(unittest.TestCase):
 
     def test_catalog_adds_history_lookup_and_opt_in_retention(self):
         catalog = {row["name"]: row for row in self.rpc("tools/list", {})["tools"]}
-        self.assertEqual(len(catalog), 126)
+        self.assertEqual(len(catalog), CURRENT_MOCK_TOOL_COUNT)
         retain = catalog["e3d_diagnose_element"]["inputSchema"]["properties"]["retain_receipt"]
         self.assertEqual(retain["type"], "boolean")
         self.assertIs(retain["default"], False)

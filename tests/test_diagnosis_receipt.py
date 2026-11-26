@@ -5,6 +5,7 @@ artifacts or contact E3D. A compact receipt must preserve all unique evidence,
 the original PNG and every uncertain/failing diagnostic observation.
 """
 from __future__ import annotations
+from catalog_compatibility import CURRENT_MOCK_TOOL_COUNT
 
 import base64
 import copy
@@ -552,7 +553,7 @@ class DiagnosisEvidenceDetailBoundaryTests(unittest.TestCase):
 
     def test_catalog_keeps_full_default_and_exposes_only_two_literal_detail_values(self):
         catalog = self.rpc("tools/list", {})["tools"]
-        self.assertEqual(len(catalog), 126)
+        self.assertEqual(len(catalog), CURRENT_MOCK_TOOL_COUNT)
         definition = next(row for row in catalog if row["name"] == "e3d_diagnose_element")
         field = definition["inputSchema"]["properties"]["evidence_detail"]
         self.assertEqual(field["type"], "string")

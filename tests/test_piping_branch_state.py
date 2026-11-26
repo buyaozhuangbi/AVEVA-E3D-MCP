@@ -1,4 +1,5 @@
 from __future__ import annotations
+from catalog_compatibility import CURRENT_MOCK_TOOL_COUNT
 
 import json
 import sys
@@ -67,7 +68,7 @@ class PipingBranchStateTests(unittest.TestCase):
     def test_schema_and_read_only_registration(self):
         server = create_server(Settings(mode="mock", version="E3D21", allow_commands=False))
         tools = server._dispatch({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}})["result"]["tools"]
-        self.assertEqual(len(tools), 126)
+        self.assertEqual(len(tools), CURRENT_MOCK_TOOL_COUNT)
         tool = next(item for item in tools if item["name"] == "e3d_piping_branch_state")
         self.assertTrue(tool["annotations"]["readOnlyHint"])
         self.assertEqual(set(tool["inputSchema"]["properties"]), {"refno", "member_limit"})

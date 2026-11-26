@@ -1,4 +1,5 @@
 from __future__ import annotations
+from catalog_compatibility import CURRENT_MOCK_TOOL_COUNT
 
 from contextlib import ExitStack
 from io import BytesIO, StringIO
@@ -46,7 +47,7 @@ class PrimitiveVisualToolTests(unittest.TestCase):
 
     def test_catalog_has_80_tools_19_receipts_and_strict_schemas(self) -> None:
         tools = {tool["name"]: tool for tool in self._rpc("tools/list", {})["tools"]}
-        self.assertEqual(len(tools), 126)
+        self.assertEqual(len(tools), CURRENT_MOCK_TOOL_COUNT)
         self.assertEqual(sum("capture_after" in tool["inputSchema"]["properties"] for tool in tools.values()), 19)
         snapshot = tools["e3d_display_snapshot"]
         self.assertEqual(snapshot["inputSchema"], {"type": "object", "properties": {}, "additionalProperties": False})

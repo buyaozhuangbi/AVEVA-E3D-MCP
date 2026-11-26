@@ -1,5 +1,6 @@
 """MCP registration and forwarding checks for opt-in clipping diagnosis."""
 from __future__ import annotations
+from catalog_compatibility import CURRENT_MOCK_TOOL_COUNT
 
 from io import StringIO
 import json
@@ -32,7 +33,7 @@ class ClippingDiagnosisRegistrationTests(unittest.TestCase):
 
     def test_discovery_exposes_opt_in_without_new_tool_or_write_permission(self):
         catalog = self.rpc("tools/list", {})["tools"]
-        self.assertEqual(len(catalog), 126)
+        self.assertEqual(len(catalog), CURRENT_MOCK_TOOL_COUNT)
         tool = next(row for row in catalog if row["name"] == "e3d_diagnose_element")
         self.assertTrue(tool["annotations"]["readOnlyHint"])
         field = tool["inputSchema"]["properties"]["include_clipping"]

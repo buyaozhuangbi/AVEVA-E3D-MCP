@@ -125,6 +125,17 @@ def element_access_refnos(values: Any) -> list[str]:
     return normalized
 
 
+def element_ancestry_parameters(refno: Any, max_depth: Any = 32) -> dict[str, Any]:
+    """Require one explicit identity without resolving or rewriting native refs."""
+    if (not isinstance(refno, str)
+            or re.fullmatch(r"=[1-9][0-9]{0,9}/(?:0|[1-9][0-9]{0,9})", refno) is None
+            or any(int(part) > 2147483647 for part in refno[1:].split("/"))):
+        raise ValueError("refno must be a canonical numeric Int32 =database/element reference")
+    if type(max_depth) is not int or not 1 <= max_depth <= 64:
+        raise ValueError("max_depth must be an integer between 1 and 64")
+    return {"refno": refno, "max_depth": max_depth}
+
+
 def spatial_map_status_parameters(database_number: Any, extract_number: Any,
                                   expected_context: Any = "") -> dict[str, Any]:
     values = {"database_number": database_number, "extract_number": extract_number}
@@ -193,6 +204,7 @@ _PARAGON_COMPONENT_PATHS = _PARAGON_COMPONENT_WRITES | {
 _NATIVE_RESULT_DIAGNOSTIC_PATHS = frozenset({
     "/api/v1/element/create", "/api/v1/element/copy", "/api/v1/element/primitive",
     "/api/v1/panel/create", "/api/v1/panel/update", "/api/v1/element/transform",
+    "/api/v1/element/transform/revisioned",
     "/api/v1/element/delete", "/api/v1/element/attribute", "/api/v1/element/attributes/set",
     "/api/v1/view/set", "/api/v1/view/camera/set", "/api/v1/view/fit", "/api/v1/view/restore",
     "/api/v1/drawlist/visual", "/api/v1/drawlist/remove", "/api/v1/view/primitive-visual",
@@ -303,7 +315,10 @@ def _response_failure_diagnostics(path: str, value: dict[str, Any]) -> dict[str,
     not be admitted through a prefix match or generic result forwarding.
     """
     diagnostics = {"state": value["state"]} if isinstance(value.get("state"), dict) else {}
-    if path in _NATIVE_RESULT_DIAGNOSTIC_PATHS and isinstance(value.get("result"), dict):
+    # An ancestry read can fail after returning some native reference/context
+    # evidence without latching a database fault. Preserve that bounded result
+    # independently of the write-outcome diagnostic route set.
+    if (path in _NATIVE_RESULT_DIAGNOSTIC_PATHS or path == "/api/v1/element/ancestry") and isinstance(value.get("result"), dict):
         diagnostics["result"] = value["result"]
     if path in _PARAGON_COMPONENT_PATHS:
         for key in ("version", "session_id", "bridge_build", "error_code"):
@@ -357,6 +372,7 @@ def _response_failure_diagnostics(path: str, value: dict[str, Any]) -> dict[str,
             if isinstance(value.get(key), bool):
                 diagnostics[key] = value[key]
     if path in {"/health", "/api/v1/database/team-identity-manifest", "/api/v1/module/context",
+                "/api/v1/element/ancestry",
                 "/api/v1/paragon/catalogue-manifest", "/api/v1/paragon/catalogue-schema",
                 "/api/v1/paragon/component-template", "/api/v1/paragon/reference-trace",
                 "/api/v1/piping/specification-read"} | _PARAGON_COMPONENT_PATHS:
@@ -488,8 +504,11 @@ class BridgeClient:
             detail = str(error_value.get("error") or error_value.get("message") or "")
             diagnostics = _response_failure_diagnostics(path, error_value)
             suffix = f": {detail}" if detail else ""
+            known_missing_transform_route = (method == "POST"
+                and path == "/api/v1/element/transform/revisioned" and exc.code == 404)
             raise BridgeError(f"E3D bridge request failed: HTTP {exc.code}{suffix}", http_status=exc.code,
-                              outcome_uncertain=_uninformative_write_failure(method, path, payload, error_value),
+                              outcome_uncertain=(False if known_missing_transform_route else
+                                  _uninformative_write_failure(method, path, payload, error_value)),
                               diagnostics=diagnostics) from exc
         except (urllib.error.URLError, TimeoutError, OSError, http.client.HTTPException) as exc:
             raise BridgeError(f"E3D bridge request failed: {exc}", transport_error=True) from exc
@@ -520,6 +539,7 @@ class BridgeClient:
         # readiness/coherence gates. Other routes (including project, whose
         # native envelope lacks version) keep their existing routing metadata.
         if path not in {"/health", "/api/v1/messages/window", "/api/v1/equipment/child-schema",
+                        "/api/v1/element/ancestry",
                         "/api/v1/piping/specification-read", "/api/v1/database/team-identity-manifest",
                         "/api/v1/module/context", "/api/v1/paragon/catalogue-manifest",
                         "/api/v1/paragon/catalogue-schema", "/api/v1/paragon/component-template",
@@ -1481,6 +1501,23 @@ class BridgeClient:
             }}
         return self._request("POST", "/api/v1/elements/access", {"refnos": references}, version=version)
 
+    def element_ancestry(self, refno: str, max_depth: int = 32,
+                         version: str | None = None) -> dict[str, Any]:
+        payload = element_ancestry_parameters(refno, max_depth)
+        selected = self._selected_version(version)
+        if selected != "E3D21" or self.settings.mode == "mock":
+            unsupported = selected != "E3D21"
+            return {"ok": True, "version": selected, "result": {
+                "success": False, "available": False, "complete": False, "read_only": True,
+                "source": "unsupported" if unsupported else "mock", "requested_refno": refno,
+                "max_depth": max_depth, "mdb_membership_complete": False,
+                "reached_world": None, "truncated": None,
+                "read_errors": [{"path": "element_ancestry", "code": "unsupported_version" if unsupported else "native_unavailable",
+                    "message": "Element ancestry is implemented only for E3D21." if unsupported else
+                               "Native element ancestry is unavailable in mock mode."}],
+            }}
+        return self._request("POST", "/api/v1/element/ancestry", payload, version=selected)
+
     def measure_elements_batch(self, refnos: list[str], measurements: list[str], wrt: str = "WORLD",
                                volume_scope: str = "element", version: str | None = None) -> dict[str, Any]:
         payload = {"refnos": refnos, "measurements": measurements, "wrt": wrt, "volume_scope": volume_scope}
@@ -1747,11 +1784,22 @@ class BridgeClient:
         return self._request("POST", "/api/v1/element/create", payload, version=version)
 
     def set_transform(self, refno: str, position: list[float] | None, x_axis: list[float] | None,
-                      y_axis: list[float] | None, wrt: str, dry_run: bool, version: str | None = None) -> dict[str, Any]:
+                      y_axis: list[float] | None, wrt: str, dry_run: bool, version: str | None = None,
+                      *, expected_revision: str | None = None) -> dict[str, Any]:
         payload = dict(refno=refno, position=position, x_axis=x_axis, y_axis=y_axis, wrt=wrt, dry_run=dry_run)
+        if not isinstance(dry_run, bool):
+            raise ValueError("dry_run must be a boolean")
+        if expected_revision is not None:
+            if not isinstance(expected_revision, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", expected_revision):
+                raise ValueError("expected_revision must contain exactly 64 hexadecimal characters")
+            payload["expected_revision"] = expected_revision.lower()
+        elif not dry_run:
+            raise ValueError("expected_revision from a fresh transform preview is required for execution")
         if self.settings.mode == "mock":
             return {"ok": True, "version": self._selected_version(version), "result": {"success": True, "mock": True, **payload}}
-        return self._request("POST", "/api/v1/element/transform", payload, version=version)
+        # This route enforces the preview token natively. Never retry through
+        # the legacy endpoint, which accepts no revision and would ignore it.
+        return self._request("POST", "/api/v1/element/transform/revisioned", payload, version=version)
 
     def create_panel(self, parent_refno: str, vertices: list[list[float]], thickness: float, name: str,
                      position: list[float], x_axis: list[float], y_axis: list[float], wrt: str,

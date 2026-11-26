@@ -104,6 +104,8 @@ public sealed class E3d21HttpAdapter : IDisposable
         bool paragonComponentCreateStatusQuery = false;
         bool paragonComponentCreateDispatched = false;
         bool paragonComponentCreateDryRun = true;
+        bool elementAncestryQuery = false;
+        bool revisionedTransformQuery = false;
         bool projectCatalogProbe = false;
         try
         {
@@ -129,6 +131,8 @@ public sealed class E3d21HttpAdapter : IDisposable
             paragonComponentParametersStatusQuery = path == "/api/v1/paragon/component-parameters/status";
             paragonComponentCreateQuery = path == "/api/v1/paragon/component-create";
             paragonComponentCreateStatusQuery = path == "/api/v1/paragon/component-create/status";
+            elementAncestryQuery = path == "/api/v1/element/ancestry";
+            revisionedTransformQuery = path == "/api/v1/element/transform/revisioned";
             projectCatalogProbe = path == "/api/v1/database/project-catalog-probe";
             object response;
             if (method == "GET" && path == "/health")
@@ -158,7 +162,32 @@ public sealed class E3d21HttpAdapter : IDisposable
                         .Concat(context is IE3d21ParagonComponentCopyContext ? new[] { "paragon_component_copy", "paragon_component_copy_status" } : Array.Empty<string>())
                         .Concat(context is IE3d21ParagonComponentParametersContext ? new[] { "paragon_component_parameters", "paragon_component_parameters_status" } : Array.Empty<string>())
                         .Concat(context is IE3d21ParagonComponentCreateContext ? new[] { "paragon_component_create", "paragon_component_create_status" } : Array.Empty<string>())
+                        .Concat(context is IElementAncestryContext ? new[] { "element_ancestry" } : Array.Empty<string>())
+                        .Concat(context is IRevisionedTransformContext ? new[] { "element_transform_revisioned" } : Array.Empty<string>())
                         .Concat(context is IE3d21PipeMemberManifestContext ? new[] { "pipe_member_manifest" } : Array.Empty<string>()).ToArray() };
+            }
+            else if (method == "POST" && path == "/api/v1/element/ancestry")
+            {
+                var ancestryContext = context as IElementAncestryContext;
+                if (ancestryContext == null)
+                {
+                    await WriteJsonAsync(request.Response, new { ok = false, version = "E3D21", session_id = sessionId,
+                        bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
+                        error = "Element ancestry is unavailable on this bridge." }, 404).ConfigureAwait(false);
+                    return;
+                }
+                if (request.Request.QueryString.Count != 0)
+                    throw new ArgumentException("Element ancestry accepts JSON parameters only.");
+                JObject body = await ReadUniqueBodyAsync(request.Request, 4096).ConfigureAwait(false);
+                if (body.Properties().Any(property => property.Name != "refno" && property.Name != "max_depth"))
+                    throw new ArgumentException("Unknown element ancestry parameter.");
+                string refno = ReadElementAncestryRefno(body);
+                int maxDepth = ReadInteger(body, "max_depth", 32);
+                if (maxDepth < 1 || maxDepth > 64)
+                    throw new ArgumentException("max_depth must be an integer from 1 to 64.");
+                response = new { ok = true, version = "E3D21", session_id = sessionId,
+                    bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
+                    result = ancestryContext.ElementAncestry(refno, maxDepth) };
             }
             else if (method == "GET" && path == "/api/v1/module/context")
             {
@@ -1337,6 +1366,41 @@ public sealed class E3d21HttpAdapter : IDisposable
                     ReadString(body, "refno", ""), ReadVector(body, "position"), ReadVector(body, "x_axis"),
                     ReadVector(body, "y_axis"), ReadString(body, "wrt", "OWNER"), ReadBoolean(body, "dry_run", true)) };
             }
+            else if (method == "POST" && path == "/api/v1/element/transform/revisioned")
+            {
+                // Revisioned transforms intentionally have a separate route.  A
+                // bridge that predates the compare-and-set implementation must
+                // fail closed instead of silently dropping expected_revision on
+                // the legacy setter.
+                var revisionedContext = context as IRevisionedTransformContext;
+                if (revisionedContext == null)
+                {
+                    await WriteJsonAsync(request.Response, new { ok = false, version = "E3D21", session_id = sessionId,
+                        bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
+                        execution_attempted = false, outcome_uncertain = false,
+                        error = "Revisioned transforms are unavailable on this bridge." }, 404).ConfigureAwait(false);
+                    return;
+                }
+                if (request.Request.QueryString.Count != 0)
+                    throw new ArgumentException("Revisioned transforms accept JSON parameters only.");
+                JObject body = await ReadUniqueBodyAsync(request.Request, 16384).ConfigureAwait(false);
+                var allowed = new HashSet<string>(StringComparer.Ordinal)
+                    { "refno", "position", "x_axis", "y_axis", "wrt", "expected_revision", "dry_run" };
+                if (body.Properties().Any(property => !allowed.Contains(property.Name)))
+                    throw new ArgumentException("Unknown revisioned transform parameter.");
+                bool dryRun = ReadBoolean(body, "dry_run", true);
+                string expectedRevision = ReadString(body, "expected_revision", null);
+                if (expectedRevision != null && !IsRevisionToken(expectedRevision))
+                    throw new ArgumentException("expected_revision must be a canonical 64-character hexadecimal revision.");
+                if (!dryRun && expectedRevision == null)
+                    throw new ArgumentException("expected_revision is required when executing a revisioned transform.");
+                response = new { ok = true, version = "E3D21", session_id = sessionId,
+                    bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
+                    result = revisionedContext.SetTransformRevisioned(
+                        ReadString(body, "refno", ""), ReadVector(body, "position"), ReadVector(body, "x_axis"),
+                        ReadVector(body, "y_axis"), ReadString(body, "wrt", "OWNER"),
+                        expectedRevision == null ? null : expectedRevision.ToLowerInvariant(), dryRun) };
+            }
             else if (method == "POST" && path == "/api/v1/element/delete")
             {
                 JObject body = await ReadBodyAsync(request.Request).ConfigureAwait(false);
@@ -1521,6 +1585,23 @@ public sealed class E3d21HttpAdapter : IDisposable
             {
                 if (managedMessageWindowQuery)
                     throw new MessageCursorException("message_cursor_request_invalid", "Message windows require GET.", 405);
+                if (elementAncestryQuery)
+                {
+                    request.Response.AddHeader("Allow", "POST");
+                    await WriteJsonAsync(request.Response, new { ok = false, version = "E3D21", session_id = sessionId,
+                        bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
+                        error = "Element ancestry requires POST." }, 405).ConfigureAwait(false);
+                    return;
+                }
+                if (revisionedTransformQuery)
+                {
+                    request.Response.AddHeader("Allow", "POST");
+                    await WriteJsonAsync(request.Response, new { ok = false, version = "E3D21", session_id = sessionId,
+                        bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
+                        execution_attempted = false, outcome_uncertain = false,
+                        error = "Revisioned transforms require POST." }, 405).ConfigureAwait(false);
+                    return;
+                }
                 if (paragonComponentTemplateQuery)
                 {
                     request.Response.AddHeader("Allow", "POST");
@@ -1634,6 +1715,36 @@ public sealed class E3d21HttpAdapter : IDisposable
                 return;
             }
             await WriteJsonAsync(request.Response, response, 200).ConfigureAwait(false);
+        }
+        catch (NativeDatabaseFaultException ex) when (elementAncestryQuery)
+        {
+            await WriteJsonAsync(request.Response, new { ok = false, version = "E3D21", session_id = sessionId,
+                bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
+                error_code = "native_database_fault", native_fault_latched = true, retry_safe = false,
+                error = ReadElementAncestryErrorText(ex.Message) }, 500).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (elementAncestryQuery)
+        {
+            await WriteJsonAsync(request.Response, new { ok = false, version = "E3D21", session_id = sessionId,
+                bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
+                error = ex is JsonReaderException ? "Request body is not valid JSON." : ReadElementAncestryErrorText(ex.Message) },
+                ex is ArgumentException || ex is JsonException ? 400 : 500).ConfigureAwait(false);
+        }
+        catch (NativeDatabaseFaultException ex) when (revisionedTransformQuery)
+        {
+            await WriteJsonAsync(request.Response, new { ok = false, version = "E3D21", session_id = sessionId,
+                bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
+                error_code = "native_database_fault", native_fault_latched = true,
+                execution_attempted = (bool?)null, outcome_uncertain = true, retry_safe = false,
+                error = ex.Message }, 500).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (revisionedTransformQuery)
+        {
+            await WriteJsonAsync(request.Response, new { ok = false, version = "E3D21", session_id = sessionId,
+                bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
+                execution_attempted = false, outcome_uncertain = false, retry_safe = false,
+                error = ex is JsonReaderException ? "Request body is not valid JSON." : ex.Message },
+                ex is ArgumentException || ex is JsonException ? 400 : 500).ConfigureAwait(false);
         }
         catch (NativeDatabaseFaultException ex) when (paragonComponentParametersQuery || paragonComponentParametersStatusQuery)
         {
@@ -1973,6 +2084,49 @@ public sealed class E3d21HttpAdapter : IDisposable
         return (string)value;
     }
 
+    private static bool IsRevisionToken(string value)
+    {
+        if (value == null || value.Length != 64) return false;
+        for (int index = 0; index < value.Length; index++)
+        {
+            char c = value[index];
+            if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') ||
+                  (c >= 'A' && c <= 'F'))) return false;
+        }
+        return true;
+    }
+
+    private static string ReadElementAncestryRefno(JObject body)
+    {
+        string value = ReadString(body, "refno", null);
+        const string error = "refno must be a canonical numeric reference (=positiveInt32/nonnegativeInt32).";
+        if (value == null || value.Length < 4 || value.Length > 22 || value[0] != '=')
+            throw new ArgumentException(error);
+        int slash = value.IndexOf('/');
+        if (slash < 2 || slash == value.Length - 1 || value[1] < '1' || value[1] > '9' ||
+            (value[slash + 1] == '0' && slash + 2 != value.Length))
+            throw new ArgumentException(error);
+        for (int index = 1; index < value.Length; index++)
+            if (index != slash && (value[index] < '0' || value[index] > '9'))
+                throw new ArgumentException(error);
+        int databaseNumber;
+        int elementNumber;
+        if (!int.TryParse(value.Substring(1, slash - 1), NumberStyles.None, CultureInfo.InvariantCulture, out databaseNumber) ||
+            databaseNumber <= 0 ||
+            !int.TryParse(value.Substring(slash + 1), NumberStyles.None, CultureInfo.InvariantCulture, out elementNumber) ||
+            elementNumber < 0)
+            throw new ArgumentException(error);
+        return value;
+    }
+
+    private static string ReadElementAncestryErrorText(string message)
+    {
+        if (string.IsNullOrEmpty(message)) return "Element ancestry could not be read.";
+        if (message.Length <= 1024) return message;
+        int length = char.IsHighSurrogate(message[1023]) ? 1023 : 1024;
+        return message.Substring(0, length);
+    }
+
     private static string ReadPmlRequestId(string value, bool allowMissing)
     {
         if (value == null && allowMissing) return null;
@@ -2101,6 +2255,22 @@ public sealed class E3d21HttpAdapter : IDisposable
     {
         return Math.Max(minimum, Math.Min(maximum, value));
     }
+}
+
+public interface IElementAncestryContext
+{
+    object ElementAncestry(string refno, int maxDepth);
+}
+
+/// <summary>
+/// Compare-and-set transform surface.  Kept separate from IE3d21Context so
+/// older bridge builds cannot accidentally ignore an expected revision and
+/// execute through the legacy transform setter.
+/// </summary>
+public interface IRevisionedTransformContext
+{
+    object SetTransformRevisioned(string refno, double[] position, double[] xAxis,
+        double[] yAxis, string wrt, string expectedRevision, bool dryRun);
 }
 
 public interface IE3d21Context

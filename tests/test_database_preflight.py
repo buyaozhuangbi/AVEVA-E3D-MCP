@@ -15,7 +15,7 @@ from aveva_e3d_mcp.bridge import BridgeClient, BridgeError
 from aveva_e3d_mcp.config import Settings
 from aveva_e3d_mcp.database_creation import TOOL, build_database_candidate, database_preflight
 from aveva_e3d_mcp.tools import create_server
-from catalog_compatibility import assert_legacy_tool_definition
+from catalog_compatibility import CURRENT_MOCK_TOOL_COUNT, MODELING_TEAM_TOOLS, E3D_IDENTITY_TOOLS, assert_legacy_tool_definition
 
 ARGS = {"team": "PIPING", "name": "NEWDB", "database_type": "DESI", "access": "UPDATE"}
 CATA_ARGS = {"team": "CATALOGUE", "name": "FITTINGS", "database_type": "CATA", "access": "UPDATE"}
@@ -474,12 +474,12 @@ class DatabasePreflightToolTests(unittest.TestCase):
         server = create_server(Settings(mode="mock", version="E3D21"))
         current = server._dispatch({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}})["result"]["tools"]
         baseline = json.loads((ROOT / "tests/fixtures/database_preflight_catalog98.json").read_text(encoding="utf-8"))
-        self.assertEqual(len(current), 126)
+        self.assertEqual(len(current), CURRENT_MOCK_TOOL_COUNT)
         current_by_name = {row["name"]: row for row in current}
         self.assertEqual(set(current_by_name) - {row["name"] for row in baseline}, {
             TOOL, "e3d_database_identity_snapshot", "e3d_piping_branch_state", "e3d_equipment_manifest",
             "e3d_pipe_member_manifest", "e3d_equipment_model_plan", "e3d_piping_route_plan", "e3d_paragon_catalogue_manifest", "e3d_module_context", "e3d_paragon_catalogue_schema", "e3d_piping_connectivity_snapshot", "e3d_equipment_child_schema", "e3d_piping_specification_read", "e3d_team_database_identity_manifest", "e3d_paragon_generation_plan", "e3d_paragon_component_template", "e3d_paragon_reference_trace", "e3d_paragon_component_copy", "e3d_paragon_component_copy_status", "e3d_paragon_component_parameters_set", "e3d_paragon_component_parameters_status", "e3d_paragon_generate_from_standard", "e3d_paragon_component_create", "e3d_paragon_component_create_status",
-            "e3d_piping_route_create", "e3d_piping_route_verify", "e3d_modeling_team_plan", "e3d_modeling_team_execute",
+            "e3d_piping_route_create", "e3d_piping_route_verify", *MODELING_TEAM_TOOLS, *E3D_IDENTITY_TOOLS,
         })
         for historical in baseline:
             assert_legacy_tool_definition(self, current_by_name[historical["name"]], historical)

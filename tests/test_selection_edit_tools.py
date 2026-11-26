@@ -1,4 +1,5 @@
 from __future__ import annotations
+from catalog_compatibility import CURRENT_MOCK_TOOL_COUNT
 
 import copy
 import json
@@ -28,7 +29,7 @@ class SelectionEditToolTests(unittest.TestCase):
 
     def test_discovery_declares_write_with_explicit_empty_clear_and_revision_guard(self):
         listed = self.server._dispatch({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})["result"]["tools"]
-        self.assertEqual(len(listed), 126)
+        self.assertEqual(len(listed), CURRENT_MOCK_TOOL_COUNT)
         tool = next(t for t in listed if t["name"] == "e3d_set_graphical_selection")
         self.assertEqual(tool["annotations"], {
             "readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False})

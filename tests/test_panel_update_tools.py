@@ -1,4 +1,5 @@
 from __future__ import annotations
+from catalog_compatibility import CURRENT_MOCK_TOOL_COUNT
 
 import base64
 import json
@@ -56,7 +57,7 @@ class PanelUpdateToolTests(unittest.TestCase):
 
     def test_update_schema_exposes_guarded_preview_omission_and_receipt_contracts(self) -> None:
         tools = {tool["name"]: tool for tool in self._rpc("tools/list", {})["tools"]}
-        self.assertEqual(len(tools), 126)
+        self.assertEqual(len(tools), CURRENT_MOCK_TOOL_COUNT)
         tool = tools["e3d_update_panel"]
         self.assertFalse(tool["annotations"]["readOnlyHint"])
         self.assertFalse(tool["annotations"]["idempotentHint"])

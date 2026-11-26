@@ -1,4 +1,5 @@
 from __future__ import annotations
+from catalog_compatibility import CURRENT_MOCK_TOOL_COUNT
 
 import json
 import sys
@@ -25,7 +26,7 @@ class ContextSnapshotToolTests(unittest.TestCase):
     def test_catalog_exposes_bounded_read_only_context_workflow(self):
         catalog = self.server._dispatch({"jsonrpc": "2.0", "id": 1,
             "method": "tools/list", "params": {}})["result"]["tools"]
-        self.assertEqual(len(catalog), 126)
+        self.assertEqual(len(catalog), CURRENT_MOCK_TOOL_COUNT)
         tool = next(tool for tool in catalog if tool["name"] == "e3d_context_snapshot")
         self.assertEqual(tool["inputSchema"], {"type": "object", "properties": {}, "additionalProperties": False})
         self.assertTrue(tool["annotations"]["readOnlyHint"])

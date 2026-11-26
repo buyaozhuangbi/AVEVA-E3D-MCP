@@ -1,4 +1,5 @@
 from __future__ import annotations
+from catalog_compatibility import CURRENT_MOCK_TOOL_COUNT
 
 import json
 import sys
@@ -23,7 +24,7 @@ class DatabaseStateToolsTests(unittest.TestCase):
 
     def test_schema_and_validation_are_bounded(self):
         tools = self.rpc("tools/list", {})["tools"]
-        self.assertEqual(len(tools), 126)
+        self.assertEqual(len(tools), CURRENT_MOCK_TOOL_COUNT)
         tool = next(item for item in tools if item["name"] == "e3d_database_state")
         self.assertTrue(tool["annotations"]["readOnlyHint"])
         self.assertFalse(tool["annotations"]["destructiveHint"])

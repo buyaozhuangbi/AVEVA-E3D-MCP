@@ -1,5 +1,6 @@
 """Production HTTP/tool contracts for native managed message cursors."""
 from __future__ import annotations
+from catalog_compatibility import CURRENT_MOCK_TOOL_COUNT
 
 import copy
 import io
@@ -62,8 +63,8 @@ class MessageWindowToolTests(unittest.TestCase):
 
     def test_discovery_adds_one_read_only_tool_and_preserves_legacy_tail_schema(self):
         catalog = self.server._dispatch({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})["result"]["tools"]
-        self.assertEqual(len(catalog), 126)
-        self.assertEqual(len({tool["name"] for tool in catalog}), 126)
+        self.assertEqual(len(catalog), CURRENT_MOCK_TOOL_COUNT)
+        self.assertEqual(len({tool["name"] for tool in catalog}), CURRENT_MOCK_TOOL_COUNT)
         tool = next(item for item in catalog if item["name"] == "e3d_read_message_window")
         self.assertTrue(tool["annotations"]["readOnlyHint"])
         self.assertFalse(tool["annotations"]["destructiveHint"])

@@ -207,7 +207,8 @@ class CaptureReceiptTests(unittest.TestCase):
                     "ok": True, "result": {"success": False, "error": "graphics not ready"},
                 }) as screenshot:
             response = self._call("e3d_set_transform", {
-                "refno": "=1/2", "position": [10, 20, 30], "dry_run": False, "capture_after": True,
+                "refno": "=1/2", "position": [10, 20, 30], "dry_run": False,
+                "expected_revision": "a" * 64, "capture_after": True,
             })
 
         write.assert_called_once()

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from catalog_compatibility import CURRENT_MOCK_TOOL_COUNT
 
 from copy import deepcopy
 from io import StringIO
@@ -51,7 +52,7 @@ class GeometryRelationBatchToolTests(unittest.TestCase):
 
     def test_catalog_exposes_bounded_read_only_ordered_pairs(self):
         tools = {item["name"]: item for item in self.rpc("tools/list", {})["tools"]}
-        self.assertEqual(len(tools), 126)
+        self.assertEqual(len(tools), CURRENT_MOCK_TOOL_COUNT)
         tool = tools["e3d_geometry_relation_batch"]
         self.assertEqual(tool["annotations"], {
             "readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False,

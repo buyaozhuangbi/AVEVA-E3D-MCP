@@ -1,5 +1,6 @@
 """Offline MCP/HTTP contract for complete PML scripts; never requests E3D."""
 from __future__ import annotations
+from catalog_compatibility import CURRENT_MOCK_TOOL_COUNT
 
 import hashlib
 import io
@@ -52,7 +53,7 @@ class PmlScriptToolsTests(unittest.TestCase):
     def test_discovery_source_contract_preview_default_and_mutation_annotations(self):
         discovery = self.server._dispatch({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}})["result"]
         tools = {item["name"]: item for item in discovery["tools"]}
-        self.assertEqual(len(tools), 126)
+        self.assertEqual(len(tools), CURRENT_MOCK_TOOL_COUNT)
         tool = tools["e3d_execute_pml_script"]
         schema = tool["inputSchema"]
         self.assertEqual(schema["required"], ["source"])
