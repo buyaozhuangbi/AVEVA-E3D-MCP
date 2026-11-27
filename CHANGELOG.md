@@ -2,6 +2,13 @@
 
 按版本记录用户可见的能力变化。后续版本只在本文件新增更新记录；README 保持为长期有效的项目能力介绍。
 
+## v0.2.6 — 2026-11-27
+
+- **重载验收可复现**：将 E3D SAVEWORK/DESIGN 重载校验脚本纳入仓库。DESIGN 后 E3D 选择新的合法当前元素会被记录为观察结果，不再误判为项目/MDB 重载失败；项目名、MDB 和连接状态仍严格核验。
+- **发布元数据审计**：新增本地 wheel 元数据、目录版本和 RECORD 哈希一致性检查，防止旧的 egg-info 或历史 wheel 污染当前发布包。
+
+[查看 v0.2.6 源码](https://github.com/buyaozhuangbi/AVEVA-E3D-MCP/tree/v0.2.6) · [比较 v0.2.5 到 v0.2.6](https://github.com/buyaozhuangbi/AVEVA-E3D-MCP/compare/v0.2.5...v0.2.6)
+
 ## v0.2.5 — 2026-11-27
 
 - **批量读取元素祖先和数据库身份**：新增只读 `e3d_element_ancestry_batch`，在一次 E3D UI callback 中按输入顺序检查 1–16 个显式 REF，共用一份 MDB 数据库清单、Design WORLD frame 和前后上下文观察；每个目标保留独立部分结果。普通目标读取错误会继续处理其他目标，原生数据库故障会停止后续 SDK 读取并把尚未开始的项目标为 `not_started`。不回退到重复单项 HTTP 请求，不执行模型写入。[接口说明](docs/element-ancestry.md)

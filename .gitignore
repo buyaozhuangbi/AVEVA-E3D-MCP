@@ -35,6 +35,8 @@ build/
 /prototypes/
 /scripts/*
 !/scripts/live_mcp.py
+!/scripts/reload_validation.py
+!/scripts/verify-staged-e3d21.py
 !/scripts/build-pump-hd002-live.py
 !/scripts/verify-pump-hd002-panels.py
 !/scripts/test-e3d21-section-readonly.py
