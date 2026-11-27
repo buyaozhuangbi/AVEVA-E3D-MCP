@@ -27,4 +27,4 @@ def test_release_version_and_additive_tool_catalog():
     assert {name: current[name] for name in old} == {
         name: with_transform_additions(with_modeling_additions(row)) for name, row in old.items()}
     package = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    assert package["project"]["version"] == server.version == __version__ == "0.2.4"
+    assert package["project"]["version"] == server.version == __version__ == "0.2.5"

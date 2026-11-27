@@ -184,13 +184,14 @@ internal static class Scenario
 namespace E3d21AiBridge
 {
     public interface IElementAncestryContext { object ElementAncestry(string refno, int maxDepth); }
+    public interface IElementAncestryBatchContext { object ElementAncestryBatch(string[] refnos, int maxDepth); }
 
     internal static class ModelEditInput
     {
         // PRODUCTION_INPUT_METHOD
     }
 
-    public sealed partial class E3d21Context : IElementAncestryContext
+    public sealed partial class E3d21Context : IElementAncestryContext, IElementAncestryBatchContext
     {
         private readonly NativeDatabaseFaultState nativeFaultState = new NativeDatabaseFaultState();
         [ThreadStatic] private static NativeDatabaseFaultState currentNativeFaultState;
@@ -275,6 +276,17 @@ internal static class Program
         }
     }
 
+    private static void RejectBatch(Action operation, string label)
+    {
+        int reads = Scenario.Reads.Count, dispatches = Scenario.Dispatches;
+        try { operation(); throw new Exception("Accepted invalid ancestry batch input: " + label); }
+        catch (ArgumentException)
+        {
+            Check(Scenario.Reads.Count == reads && Scenario.Dispatches == dispatches,
+                label + " is rejected before SDK access or UI dispatch");
+        }
+    }
+
     private static DbElement Target()
     { return Scenario.Elements["901/23"]; }
 
@@ -322,6 +334,132 @@ internal static class Program
                 && Scenario.Dispatches == 1 && Scenario.ForbiddenCalls == 0,
                 "the complete MDB scan and before/after context are read in one dispatch without writes");
             string[] completeReadPaths = Scenario.Reads.Distinct(StringComparer.Ordinal).ToArray();
+
+            context = Fresh();
+            RejectBatch(() => context.ElementAncestryBatch(new string[0], 4), "empty batch");
+            RejectBatch(() => context.ElementAncestryBatch(Enumerable.Repeat("=901/23", 17).ToArray(), 4), "batch above limit");
+            RejectBatch(() => context.ElementAncestryBatch(new[] { "=901/23", "=901/23" }, 4), "duplicate batch reference");
+            RejectBatch(() => context.ElementAncestryBatch(new[] { "=901/23" }, 0), "batch zero depth");
+
+            context = Fresh();
+            var batch = D(context.ElementAncestryBatch(new[] { "=901/23", "=808/0" }, 4));
+            var batchItems = (List<Dictionary<string, object>>)batch["results"];
+            Check(Equals(batch["success"], true) && Equals(batch["complete"], true)
+                && Equals(batch["mdb_scan_complete"], true) && Equals(batch["mdb_membership_complete"], true)
+                && batchItems.Count == 2 && Equals(batchItems[0]["index"], 0)
+                && Equals(batchItems[0]["requested_refno"], "=901/23")
+                && Equals(batchItems[1]["requested_refno"], "=808/0")
+                && Equals(batchItems[0]["status"], "complete") && Equals(batchItems[1]["status"], "complete")
+                && Equals(batchItems[0]["reached_world"], true) && Equals(batchItems[1]["reached_world"], true)
+                && Scenario.Dispatches == 1
+                && Scenario.Reads.Count(path => path == "mdb.databases") == 1
+                && Scenario.Reads.Count(path => path == "mdb.first_world") == 1,
+                "a valid batch preserves input order and shares one UI context/database scan");
+            string[] batchReadPaths = Scenario.Reads.Distinct(StringComparer.Ordinal).ToArray();
+
+            context = Fresh();
+            var sixteenRefnos = Enumerable.Range(10, 16).Select(value => "=777/" + value.ToString(CultureInfo.InvariantCulture)).ToArray();
+            batch = D(context.ElementAncestryBatch(sixteenRefnos, 64));
+            Check(((List<Dictionary<string, object>>)batch["results"]).Count == 16
+                && Scenario.Dispatches == 1 && Scenario.Reads.Count(path => path == "mdb.databases") == 1
+                && Scenario.Reads.Count(path => path == "mdb.first_world") == 1,
+                "the maximum 16 distinct references are accepted within one shared UI/MDB scan");
+
+            foreach (string faultPath in batchReadPaths)
+            {
+                context = Fresh();
+                int batchReadsAtFault = 0;
+                Scenario.OnRead = path =>
+                {
+                    if (path != faultPath) return;
+                    context.Fault(); batchReadsAtFault = Scenario.Reads.Count;
+                };
+                batch = D(context.ElementAncestryBatch(new[] { "=901/23", "=808/0" }, 4));
+                batchItems = (List<Dictionary<string, object>>)batch["results"];
+                Check(batchReadsAtFault > 0 && Scenario.Reads.Count == batchReadsAtFault
+                    && Scenario.Reads[Scenario.Reads.Count - 1] == faultPath
+                    && batch["native_database_fault"] != null && Equals(batch["success"], false)
+                    && Equals(batch["complete"], false)
+                    && (Equals(batchItems[0]["status"], "incomplete") || Equals(batchItems[0]["status"], "not_started"))
+                    && Scenario.ForbiddenCalls == 0,
+                    "batch getter fault at " + faultPath + " prevents every later native getter");
+                if (faultPath.StartsWith("e11.", StringComparison.Ordinal))
+                    Check(Equals(batchItems[0]["status"], "incomplete") && Equals(batchItems[1]["status"], "not_started"),
+                        "a fatal first-target read leaves later targets not_started");
+                if (faultPath == "element.get.808/0")
+                    Check(Equals(batchItems[0]["status"], "incomplete") && Equals(batchItems[0]["success"], false)
+                        && Equals(batchItems[1]["status"], "incomplete"),
+                        "a fatal second-target lookup invalidates prior completion without relabeling it not_started");
+            }
+
+            context = Fresh();
+            batch = D(context.ElementAncestryBatch(new[] { "=1/999", "=808/0" }, 4));
+            batchItems = (List<Dictionary<string, object>>)batch["results"];
+            Check(Equals(batch["success"], false) && Equals(batch["complete"], false)
+                && Equals(batchItems[0]["status"], "incomplete") && Equals(batchItems[1]["status"], "complete")
+                && Equals(batchItems[1]["success"], true) && Equals(batchItems[0]["complete"], false),
+                "an ordinary target failure remains local while later targets continue");
+
+            context = Fresh();
+            batch = D(context.ElementAncestryBatch(new[] { "=901/23", "=808/0" }, 1));
+            batchItems = (List<Dictionary<string, object>>)batch["results"];
+            Check(Equals(batch["success"], false) && Equals(batch["complete"], false)
+                && Equals(batchItems[0]["status"], "incomplete") && Equals(batchItems[0]["truncated"], true)
+                && Equals(batchItems[1]["truncated"], false),
+                "batch depth one reports per-item truncation without claiming completion");
+
+            context = Fresh();
+            Scenario.OnRead = path => { if (path == "e11.ref") context.Fault(); };
+            batch = D(context.ElementAncestryBatch(new[] { "=901/23", "=808/0" }, 4));
+            batchItems = (List<Dictionary<string, object>>)batch["results"];
+            Check(Equals(batch["success"], false) && Equals(batch["complete"], false)
+                && batch["native_database_fault"] != null && Equals(batchItems[0]["status"], "incomplete")
+                && Equals(batchItems[1]["status"], "not_started") && Scenario.Dispatches == 1,
+                "a native fault stops the batch and marks remaining targets not_started");
+
+            context = Fresh();
+            Scenario.AfterOperation = context.Fault;
+            batch = D(context.ElementAncestryBatch(new[] { "=901/23", "=808/0" }, 4));
+            batchItems = (List<Dictionary<string, object>>)batch["results"];
+            Check(Equals(batch["success"], false) && Equals(batch["complete"], false)
+                && Equals(batch["mdb_membership_complete"], false)
+                && batchItems.All(item => Equals(item["status"], "incomplete") && Equals(item["success"], false)
+                    && Equals(item["complete"], false))
+                && batchItems.SelectMany(item => (List<Dictionary<string, object>>)item["ancestors"])
+                    .All(row => D(row["database"])["in_current_mdb"] == null)
+                && batchItems.All(item => ((List<object>)item["read_errors"]).Any(error =>
+                    Equals(D(error)["code"], "native_database_fault")))
+                && D(D(batch["world_frame"])["database"])["in_current_mdb"] == null,
+                "a post-dispatch native fault retains completed read evidence but clears context-dependent membership claims");
+
+            context = Fresh();
+            int batchProjectReads = 0;
+            Scenario.OnRead = path =>
+            {
+                if (path == "project.current" && ++batchProjectReads == 2)
+                    Scenario.Overrides[path] = new Aveva.Core.Database.Project("PROJECT");
+            };
+            batch = D(context.ElementAncestryBatch(new[] { "=901/23", "=808/0" }, 4));
+            batchItems = (List<Dictionary<string, object>>)batch["results"];
+            Check(Equals(batch["success"], false) && Equals(batch["complete"], false)
+                && Equals(batch["mdb_membership_complete"], false)
+                && batchItems.All(item => Equals(item["success"], false) && Equals(item["complete"], false)),
+                "shared context drift clears every per-item success claim");
+
+            context = Fresh();
+            Scenario.Elements["902/7"].TypeName = "SITE";
+            Scenario.Elements["707/0"].TypeName = "WORL";
+            Scenario.Elements["808/0"].TypeName = "WORL";
+            Scenario.Overrides["e12.type.is_world"] = true;
+            Scenario.Overrides["e1.type.is_world"] = false;
+            Scenario.Overrides["e2.type.is_world"] = false;
+            batch = D(context.ElementAncestryBatch(new[] { "=901/23", "=808/0" }, 4));
+            batchItems = (List<Dictionary<string, object>>)batch["results"];
+            Check(Equals(batch["success"], true) && Equals(batchItems[0]["reached_world"], true)
+                && Equals(batchItems[1]["reached_world"], true)
+                && Equals(((List<Dictionary<string, object>>)batchItems[0]["ancestors"])[1]["is_world"], true)
+                && Equals(((List<Dictionary<string, object>>)batchItems[0]["ancestors"])[2]["is_world"], false),
+                "batch traversal preserves SITE=true and WORL=false native flags as raw evidence");
 
             context = Fresh();
             Scenario.Elements["902/7"].TypeName = "SITE";

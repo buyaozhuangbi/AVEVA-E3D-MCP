@@ -6,8 +6,198 @@ using Aveva.Core.Database;
 
 namespace E3d21AiBridge;
 
-public sealed partial class E3d21Context : IElementAncestryContext
+public sealed partial class E3d21Context : IElementAncestryContext, IElementAncestryBatchContext
 {
+    public object ElementAncestryBatch(string[] refnos, int maxDepth)
+    {
+        if (refnos == null || refnos.Length < 1 || refnos.Length > 16)
+            throw new ArgumentException("refnos must contain from 1 through 16 explicit references.", "refnos");
+        if (maxDepth < 1 || maxDepth > 64)
+            throw new ArgumentOutOfRangeException("maxDepth", "max_depth must be from 1 through 64.");
+        var requested = new List<int[]>();
+        var unique = new HashSet<string>(StringComparer.Ordinal);
+        foreach (string refno in refnos)
+        {
+            int[] pair = AncestryReference(refno);
+            string canonical = ModelReference(pair);
+            if (!unique.Add(canonical))
+                throw new ArgumentException("refnos must contain unique canonical references.", "refnos");
+            requested.Add(pair);
+        }
+        if (IsCommandActive()) throw new InvalidOperationException("E3D is busy executing a command or waiting on a dialog.");
+
+        var errors = new List<object>();
+        var databases = new List<Dictionary<string, object>>();
+        var context = new Dictionary<string, object>
+        {
+            ["project_before"] = null, ["project_after"] = null,
+            ["mdb_before"] = null, ["mdb_after"] = null,
+            ["ce_before"] = null, ["ce_after"] = null, ["ce_unchanged"] = null,
+            ["identity_unchanged"] = null
+        };
+        var results = new List<Dictionary<string, object>>();
+        for (int index = 0; index < refnos.Length; index++)
+            results.Add(AncestryBatchItem(index, refnos[index]));
+        var result = new Dictionary<string, object>
+        {
+            ["success"] = false, ["complete"] = false, ["read_only"] = true,
+            ["refnos"] = new List<string>(refnos), ["max_depth"] = maxDepth,
+            ["results"] = results, ["mdb_databases"] = databases, ["mdb_database_count"] = null,
+            ["mdb_scan_complete"] = false, ["mdb_membership_complete"] = false,
+            ["world_frame"] = null, ["context"] = context, ["read_errors"] = errors,
+            ["native_database_fault"] = null,
+            ["consistency"] = "single_ui_dispatch_not_a_database_lock",
+            ["database_identity_source"] = "DbElement.Db resolves through the current MDB by database Number; ExtractNumber is not independent evidence when that Number has multiple extracts.",
+            ["scope"] = "Explicit numeric targets, bounded OWNER chains, one SDK-selected Design WORLD and one ordered current-MDB database identity scan. No PML, claims, writes or display changes."
+        };
+        try
+        {
+            OnUi(delegate
+            {
+                if (IsCommandActive()) throw new InvalidOperationException("E3D is busy executing a command or waiting on a dialog.");
+                Project project = (Project)AncestryRead(() => Project.CurrentProject, errors, "context.project");
+                MDB mdb = (MDB)AncestryRead(() => MDB.CurrentMDB, errors, "context.mdb");
+                context["ce_before"] = AncestryRead(() => ModelCurrentReference(), errors, "context.ce_before");
+                bool membershipComplete = false;
+                if (project == null || mdb == null)
+                    AncestryError(errors, "context", "unavailable", "An open project and MDB are required.");
+                else
+                {
+                    context["project_before"] = AncestryRead(() => project.Name, errors, "context.project_before");
+                    context["mdb_before"] = AncestryRead(() => mdb.Name, errors, "context.mdb_before");
+                    membershipComplete = AncestryReadDatabases(mdb, result, databases, errors);
+                    result["mdb_scan_complete"] = membershipComplete;
+                    DbElement world = (DbElement)AncestryRead(() => mdb.GetFirstWorld(DbType.Design), errors, "world_frame");
+                    if (world != null)
+                    {
+                        Dictionary<string, object> frame = AncestryElement(world, databases, membershipComplete, errors, "world_frame");
+                        result["world_frame"] = frame;
+                        if (!AncestryVerifiedDesignWorld(frame))
+                            AncestryError(errors, "world_frame", "invalid_world", "The SDK-selected frame is not the verified WORLD of a unique Design database in this MDB.");
+                    }
+                    else AncestryError(errors, "world_frame", "unavailable", "The SDK returned no Design WORLD.");
+                }
+                for (int index = 0; index < requested.Count; index++)
+                {
+                    Dictionary<string, object> item = results[index];
+                    if (errors.Any(error => error is Dictionary<string, object> row &&
+                        ((string)row["path"]).StartsWith("context", StringComparison.Ordinal)))
+                    { item["status"] = "incomplete"; continue; }
+                    AncestryWalk(item, requested[index], maxDepth, databases, membershipComplete);
+                    item["complete"] = Equals(item["complete"], true) && errors.Count == 0;
+                    item["success"] = item["complete"];
+                    if (!Equals(item["complete"], true)) item["status"] = "incomplete";
+                }
+                context["ce_after"] = AncestryRead(() => ModelCurrentReference(), errors, "context.ce_after");
+                context["ce_unchanged"] = context["ce_before"] != null && context["ce_after"] != null ? (object)Equals(context["ce_before"], context["ce_after"]) : null;
+                Project projectAfter = (Project)AncestryRead(() => Project.CurrentProject, errors, "context.project_after_object");
+                MDB mdbAfter = (MDB)AncestryRead(() => MDB.CurrentMDB, errors, "context.mdb_after_object");
+                if (projectAfter != null) context["project_after"] = AncestryRead(() => projectAfter.Name, errors, "context.project_after");
+                if (mdbAfter != null) context["mdb_after"] = AncestryRead(() => mdbAfter.Name, errors, "context.mdb_after");
+                context["identity_unchanged"] = project != null && mdb != null && projectAfter != null && mdbAfter != null &&
+                    context["project_before"] != null && context["mdb_before"] != null && context["project_after"] != null && context["mdb_after"] != null
+                    ? (object)(ReferenceEquals(project, projectAfter) && ReferenceEquals(mdb, mdbAfter) && Equals(context["project_before"], context["project_after"]) && Equals(context["mdb_before"], context["mdb_after"])) : null;
+                if (!Equals(context["ce_unchanged"], true) || !Equals(context["identity_unchanged"], true))
+                    AncestryError(errors, "context", "consistency_unverified", "Project/MDB and current element could not be verified unchanged.");
+                result["mdb_membership_complete"] = Equals(result["mdb_scan_complete"], true) && Equals(context["identity_unchanged"], true);
+                if (errors.Count > 0 || !Equals(result["mdb_membership_complete"], true))
+                    foreach (Dictionary<string, object> item in results)
+                    {
+                        item["success"] = false;
+                        item["complete"] = false;
+                        if (Equals(item["status"], "complete")) item["status"] = "incomplete";
+                    }
+                if (!Equals(result["mdb_membership_complete"], true))
+                {
+                    foreach (Dictionary<string, object> item in results)
+                        foreach (Dictionary<string, object> row in (List<Dictionary<string, object>>)item["ancestors"])
+                            ((Dictionary<string, object>)row["database"])["in_current_mdb"] = null;
+                    var worldFrame = result["world_frame"] as Dictionary<string, object>;
+                    if (worldFrame != null)
+                        ((Dictionary<string, object>)worldFrame["database"])["in_current_mdb"] = null;
+                }
+                result["complete"] = Equals(result["mdb_membership_complete"], true) && errors.Count == 0 && results.All(item => Equals(item["complete"], true));
+                result["success"] = result["complete"];
+                return result;
+            });
+        }
+        catch (NativeDatabaseFaultException error)
+        {
+            AncestryError(errors, "ancestry", "native_database_fault", error.Message);
+            result["native_database_fault"] = nativeFaultState == null ? null : nativeFaultState.Snapshot();
+            foreach (string field in new[] { "ce_after", "ce_unchanged", "project_after", "mdb_after", "identity_unchanged" }) context[field] = null;
+            result["success"] = false; result["complete"] = false; result["mdb_membership_complete"] = false;
+            foreach (Dictionary<string, object> item in results)
+            {
+                foreach (Dictionary<string, object> row in (List<Dictionary<string, object>>)item["ancestors"])
+                    ((Dictionary<string, object>)row["database"])["in_current_mdb"] = null;
+                if (Equals(item["status"], "not_started")) continue;
+                // Earlier target reads remain in the receipt, but a fatal
+                // shared-context failure invalidates completion claims.
+                item["status"] = "incomplete";
+                item["success"] = false; item["complete"] = false;
+                AncestryError((List<object>)item["read_errors"], "shared_context", "native_database_fault",
+                    "A native database fault prevented final context verification.");
+            }
+            var worldFrame = result["world_frame"] as Dictionary<string, object>;
+            if (worldFrame != null) ((Dictionary<string, object>)worldFrame["database"])["in_current_mdb"] = null;
+        }
+        return result;
+    }
+
+    private static Dictionary<string, object> AncestryBatchItem(int index, string refno)
+    {
+        return new Dictionary<string, object>
+        {
+            ["index"] = index, ["requested_refno"] = refno, ["status"] = "not_started",
+            ["success"] = false, ["complete"] = false, ["target"] = null,
+            ["ancestors"] = new List<Dictionary<string, object>>(), ["reached_world"] = false,
+            ["truncated"] = false, ["read_errors"] = new List<object>()
+        };
+    }
+
+    private static void AncestryWalk(Dictionary<string, object> item, int[] requested, int maxDepth,
+        List<Dictionary<string, object>> databases, bool membershipComplete)
+    {
+        item["status"] = "incomplete";
+        var itemErrors = (List<object>)item["read_errors"];
+        DbElement current = (DbElement)AncestryRead(() => DbElement.GetElement(requested), itemErrors, "target");
+        var ancestors = (List<Dictionary<string, object>>)item["ancestors"];
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        for (int depth = 0; depth < maxDepth; depth++)
+        {
+            string path = "ancestors[" + depth.ToString(CultureInfo.InvariantCulture) + "]";
+            Dictionary<string, object> row = AncestryElement(current, databases, membershipComplete, itemErrors, path);
+            row["depth"] = depth; ancestors.Add(row);
+            if (depth == 0)
+            {
+                item["target"] = row;
+                int[] resolved = row["raw_ref"] as int[];
+                if (resolved == null || resolved.Length != 2 || resolved[0] != requested[0] || resolved[1] != requested[1])
+                    AncestryError(itemErrors, "target.raw_ref", "reference_mismatch", "The SDK resolved a different raw reference than the explicit request.");
+            }
+            if (!Equals(row["available"], true)) break;
+            string raw = row["raw_refno"] as string;
+            if (raw == null) break;
+            if (!seen.Add(AncestryCycleKey(row)))
+            { AncestryError(itemErrors, path, "cycle", "A repeated raw reference was found in the OWNER chain."); break; }
+            string typeName = row["type"] as string;
+            if (typeName == "WORL" || typeName == "WORLD")
+            {
+                if (AncestryVerifiedDesignWorld(row)) item["reached_world"] = true;
+                else AncestryError(itemErrors, path, "invalid_world", "The WORLD endpoint does not match a verified current-MDB Design database WORLD.");
+                break;
+            }
+            if (depth + 1 == maxDepth) { item["truncated"] = true; break; }
+            DbElement child = current;
+            current = (DbElement)AncestryRead(() => child.Owner, itemErrors, path + ".owner");
+        }
+        item["complete"] = Equals(item["reached_world"], true) && !Equals(item["truncated"], true) &&
+            Equals(membershipComplete, true) && itemErrors.Count == 0;
+        item["success"] = item["complete"];
+        item["status"] = Equals(item["complete"], true) ? "complete" : "incomplete";
+    }
+
     public object ElementAncestry(string refno, int maxDepth)
     {
         int[] requested = AncestryReference(refno);
@@ -63,45 +253,13 @@ public sealed partial class E3d21Context : IElementAncestryContext
                     }
                     else AncestryError(errors, "world_frame", "unavailable", "The SDK returned no Design WORLD.");
 
-                    DbElement current = (DbElement)AncestryRead(() => DbElement.GetElement(requested), errors, "target");
-                    var seen = new HashSet<string>(StringComparer.Ordinal);
-                    for (int depth = 0; depth < maxDepth; depth++)
-                    {
-                        string path = "ancestors[" + depth.ToString(CultureInfo.InvariantCulture) + "]";
-                        Dictionary<string, object> row = AncestryElement(current, databases, membershipComplete, errors, path);
-                        row["depth"] = depth;
-                        ancestors.Add(row);
-                        if (depth == 0)
-                        {
-                            result["target"] = row;
-                            int[] resolved = row["raw_ref"] as int[];
-                            if (resolved == null || resolved.Length != 2 || resolved[0] != requested[0] || resolved[1] != requested[1])
-                                AncestryError(errors, "target.raw_ref", "reference_mismatch", "The SDK resolved a different raw reference than the explicit request.");
-                        }
-                        if (!Equals(row["available"], true)) break;
-                        string raw = row["raw_refno"] as string;
-                        if (raw == null) break;
-                        string cycleKey = AncestryCycleKey(row);
-                        if (!seen.Add(cycleKey))
-                        {
-                            AncestryError(errors, path, "cycle", "A repeated raw reference was found in the OWNER chain.");
-                            break;
-                        }
-                        // DbElementType.IsWorld is a raw native noun flag. On
-                        // E3D21 SITE can return true while WORL returns false;
-                        // retain it as evidence without using it for traversal.
-                        string typeName = row["type"] as string;
-                        if (typeName == "WORL" || typeName == "WORLD")
-                        {
-                            if (AncestryVerifiedDesignWorld(row))
-                                result["reached_world"] = true;
-                            else AncestryError(errors, path, "invalid_world", "The WORLD endpoint does not match a verified current-MDB Design database WORLD.");
-                            break;
-                        }
-                        if (depth + 1 == maxDepth) { result["truncated"] = true; break; }
-                        DbElement child = current;
-                        current = (DbElement)AncestryRead(() => child.Owner, errors, path + ".owner");
-                    }
+                    var item = AncestryBatchItem(0, refno);
+                    item["read_errors"] = errors;
+                    item["ancestors"] = ancestors;
+                    AncestryWalk(item, requested, maxDepth, databases, membershipComplete);
+                    result["target"] = item["target"];
+                    result["reached_world"] = item["reached_world"];
+                    result["truncated"] = item["truncated"];
                 }
                 context["ce_after"] = AncestryRead(() => ModelCurrentReference(), errors, "context.ce_after");
                 context["ce_unchanged"] = context["ce_before"] != null && context["ce_after"] != null

@@ -5,8 +5,8 @@ from copy import deepcopy
 
 # Reviewed public catalogue expectations. Keep these independent of the live
 # registry so discovery tests still detect missing or duplicated registrations.
-CURRENT_MOCK_TOOL_COUNT = 129
-E3D_IDENTITY_TOOLS = frozenset({"e3d_element_ancestry"})
+CURRENT_MOCK_TOOL_COUNT = 130
+E3D_IDENTITY_TOOLS = frozenset({"e3d_element_ancestry", "e3d_element_ancestry_batch"})
 MODELING_TEAM_TOOLS = frozenset({
     "e3d_modeling_team_submit", "e3d_modeling_team_plan",
     "e3d_modeling_team_execute", "e3d_modeling_team_status",

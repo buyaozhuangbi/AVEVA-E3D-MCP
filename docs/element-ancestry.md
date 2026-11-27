@@ -11,6 +11,19 @@
 
 `refno` 必须是规范 ASCII 数字形式 `=positiveInt32/nonnegativeInt32`，不接受空格、前导零、名称或超出 Int32 的数字。`max_depth` 为 1–64，默认 32，计数包含目标本身；目标在 `ancestors[0]`，深度字段为 `0`。达到上限仍未遇到 WORLD 时，结果标记 `truncated`。
 
+## 批量读取
+
+多个已知 REF 可使用 `e3d_element_ancestry_batch`：
+
+```json
+{
+  "refnos": ["=2013286676/490", "=2013286676/491"],
+  "max_depth": 32
+}
+```
+
+`refnos` 必须包含 1–16 个互不重复的规范数字 REF。结果 `results` 与输入顺序一致，每项分别包含 `target`、`ancestors`、`status`、`complete`、`reached_world`、`truncated` 和 `read_errors`；共享的 MDB 目录、WORLD frame 和 `context` 在顶层只观察一次。调用只发起一个 E3D UI callback 和一次 MDB 数据库目录扫描，不会在 Python 侧循环调用单项接口。普通单项读取失败会保留该项的部分证据并继续其余目标。检测到原生数据库故障后停止所有后续 SDK 读取，已开始项保持 `incomplete`，尚未开始项标记 `not_started`；共享上下文或成员清单失败时，顶层 `success/complete` 为 false，所有受影响目标也不报告 complete。任何成功字段都不代表数据库锁或未来写权限。
+
 每个元素分开返回 SDK 的 `raw_ref` / `raw_refno` 与格式化 `formatted_refno`。它们是不同来源的观察值，不能互相替代，也不能用 REF 推算数据库 Number。数据库身份从 SDK `DbElement.Db` 与 `MDB.GetDBArray()` 读取；数据库 Number 在该 SDK 中经当前 MDB 查找，因此同一 Number 对应多个 Extract 时，单个元素的精确 Extract 归属保持未知，并附带诊断。
 
 `is_world` 保留 SDK `DbElementType.IsWorld` 的原始观察值，不用它判定 OWNER 链终点。本机 E3D 2.1 中已观察到 SITE 返回 `true`、WORL 返回 `false`。终点必须同时满足类型短名为 WORL/WORLD、原始 REF 的元素分量为 0、数据库为当前 MDB 的明确 Design 成员，并且 REF 与该数据库原生 WORLD 的 REF 一致。

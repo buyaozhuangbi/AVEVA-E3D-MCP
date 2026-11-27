@@ -20,7 +20,7 @@ class ElementAncestryNativeContractTests(unittest.TestCase):
         helpers = re.findall(r"^    private static [^\n]+\b(Ancestry\w+)\(", reader, re.MULTILINE)
         self.assertTrue(helpers, "The production ancestry reader must expose its Ancestry-prefixed helper methods.")
         self.assertTrue(all(name.startswith("Ancestry") for name in helpers))
-        methods = [extract(reader, "ElementAncestry")] + [extract(reader, name) for name in helpers]
+        methods = [extract(reader, "ElementAncestry"), extract(reader, "ElementAncestryBatch")] + [extract(reader, name) for name in helpers]
 
         model = (BRIDGE / "E3d21ModelEditing.cs").read_text(encoding="utf-8-sig")
         methods += [extract(model, name) for name in ("ModelReference", "ModelCurrentReference")]

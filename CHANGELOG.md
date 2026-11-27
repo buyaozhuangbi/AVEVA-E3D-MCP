@@ -2,6 +2,13 @@
 
 按版本记录用户可见的能力变化。后续版本只在本文件新增更新记录；README 保持为长期有效的项目能力介绍。
 
+## v0.2.5 — 2026-11-27
+
+- **批量读取元素祖先和数据库身份**：新增只读 `e3d_element_ancestry_batch`，在一次 E3D UI callback 中按输入顺序检查 1–16 个显式 REF，共用一份 MDB 数据库清单、Design WORLD frame 和前后上下文观察；每个目标保留独立部分结果。普通目标读取错误会继续处理其他目标，原生数据库故障会停止后续 SDK 读取并把尚未开始的项目标为 `not_started`。不回退到重复单项 HTTP 请求，不执行模型写入。[接口说明](docs/element-ancestry.md)
+- **工具目录**：mock 工具目录增加到 130 项。
+
+[查看 v0.2.5 源码](https://github.com/buyaozhuangbi/AVEVA-E3D-MCP/tree/v0.2.5) · [比较 v0.2.4 到 v0.2.5](https://github.com/buyaozhuangbi/AVEVA-E3D-MCP/compare/v0.2.4...v0.2.5)
+
 ## v0.2.4 — 2026-11-26
 
 - **各 Agent 可分别交提案**：新增 `e3d_modeling_team_submit`；协调方按明确的 Agent 名单封存，再按冻结引用执行。计划保留完整任务和原始序号，支持跨 Agent 父项/复制来源依赖；封存后拒绝替换任务或混用整包接口，重复提交、封存和执行分别去重。

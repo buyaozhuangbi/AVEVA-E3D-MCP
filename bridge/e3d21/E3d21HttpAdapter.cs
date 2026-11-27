@@ -105,6 +105,7 @@ public sealed class E3d21HttpAdapter : IDisposable
         bool paragonComponentCreateDispatched = false;
         bool paragonComponentCreateDryRun = true;
         bool elementAncestryQuery = false;
+        bool elementAncestryBatchQuery = false;
         bool revisionedTransformQuery = false;
         bool projectCatalogProbe = false;
         try
@@ -132,6 +133,7 @@ public sealed class E3d21HttpAdapter : IDisposable
             paragonComponentCreateQuery = path == "/api/v1/paragon/component-create";
             paragonComponentCreateStatusQuery = path == "/api/v1/paragon/component-create/status";
             elementAncestryQuery = path == "/api/v1/element/ancestry";
+            elementAncestryBatchQuery = path == "/api/v1/element/ancestry-batch";
             revisionedTransformQuery = path == "/api/v1/element/transform/revisioned";
             projectCatalogProbe = path == "/api/v1/database/project-catalog-probe";
             object response;
@@ -163,6 +165,7 @@ public sealed class E3d21HttpAdapter : IDisposable
                         .Concat(context is IE3d21ParagonComponentParametersContext ? new[] { "paragon_component_parameters", "paragon_component_parameters_status" } : Array.Empty<string>())
                         .Concat(context is IE3d21ParagonComponentCreateContext ? new[] { "paragon_component_create", "paragon_component_create_status" } : Array.Empty<string>())
                         .Concat(context is IElementAncestryContext ? new[] { "element_ancestry" } : Array.Empty<string>())
+                        .Concat(context is IElementAncestryBatchContext ? new[] { "element_ancestry_batch" } : Array.Empty<string>())
                         .Concat(context is IRevisionedTransformContext ? new[] { "element_transform_revisioned" } : Array.Empty<string>())
                         .Concat(context is IE3d21PipeMemberManifestContext ? new[] { "pipe_member_manifest" } : Array.Empty<string>()).ToArray() };
             }
@@ -188,6 +191,29 @@ public sealed class E3d21HttpAdapter : IDisposable
                 response = new { ok = true, version = "E3D21", session_id = sessionId,
                     bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
                     result = ancestryContext.ElementAncestry(refno, maxDepth) };
+            }
+            else if (method == "POST" && path == "/api/v1/element/ancestry-batch")
+            {
+                var ancestryBatchContext = context as IElementAncestryBatchContext;
+                if (ancestryBatchContext == null)
+                {
+                    await WriteJsonAsync(request.Response, new { ok = false, version = "E3D21", session_id = sessionId,
+                        bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
+                        error = "Element ancestry batch is unavailable on this bridge." }, 404).ConfigureAwait(false);
+                    return;
+                }
+                if (request.Request.QueryString.Count != 0)
+                    throw new ArgumentException("Element ancestry batch accepts JSON parameters only.");
+                JObject body = await ReadUniqueBodyAsync(request.Request, 16384).ConfigureAwait(false);
+                if (body.Properties().Any(property => property.Name != "refnos" && property.Name != "max_depth"))
+                    throw new ArgumentException("Unknown element ancestry batch parameter.");
+                string[] refnos = ReadElementAncestryBatchRefnos(body);
+                int maxDepth = ReadInteger(body, "max_depth", 32);
+                if (maxDepth < 1 || maxDepth > 64)
+                    throw new ArgumentException("max_depth must be an integer from 1 to 64.");
+                response = new { ok = true, version = "E3D21", session_id = sessionId,
+                    bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
+                    result = ancestryBatchContext.ElementAncestryBatch(refnos, maxDepth) };
             }
             else if (method == "GET" && path == "/api/v1/module/context")
             {
@@ -1593,6 +1619,14 @@ public sealed class E3d21HttpAdapter : IDisposable
                         error = "Element ancestry requires POST." }, 405).ConfigureAwait(false);
                     return;
                 }
+                if (elementAncestryBatchQuery)
+                {
+                    request.Response.AddHeader("Allow", "POST");
+                    await WriteJsonAsync(request.Response, new { ok = false, version = "E3D21", session_id = sessionId,
+                        bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
+                        error = "Element ancestry batch requires POST." }, 405).ConfigureAwait(false);
+                    return;
+                }
                 if (revisionedTransformQuery)
                 {
                     request.Response.AddHeader("Allow", "POST");
@@ -1723,7 +1757,21 @@ public sealed class E3d21HttpAdapter : IDisposable
                 error_code = "native_database_fault", native_fault_latched = true, retry_safe = false,
                 error = ReadElementAncestryErrorText(ex.Message) }, 500).ConfigureAwait(false);
         }
+        catch (NativeDatabaseFaultException ex) when (elementAncestryBatchQuery)
+        {
+            await WriteJsonAsync(request.Response, new { ok = false, version = "E3D21", session_id = sessionId,
+                bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
+                error_code = "native_database_fault", native_fault_latched = true, retry_safe = false,
+                error = ReadElementAncestryErrorText(ex.Message) }, 500).ConfigureAwait(false);
+        }
         catch (Exception ex) when (elementAncestryQuery)
+        {
+            await WriteJsonAsync(request.Response, new { ok = false, version = "E3D21", session_id = sessionId,
+                bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
+                error = ex is JsonReaderException ? "Request body is not valid JSON." : ReadElementAncestryErrorText(ex.Message) },
+                ex is ArgumentException || ex is JsonException ? 400 : 500).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (elementAncestryBatchQuery)
         {
             await WriteJsonAsync(request.Response, new { ok = false, version = "E3D21", session_id = sessionId,
                 bridge_build = typeof(E3d21HttpAdapter).Module.ModuleVersionId.ToString("D"),
@@ -2119,6 +2167,25 @@ public sealed class E3d21HttpAdapter : IDisposable
         return value;
     }
 
+    private static string[] ReadElementAncestryBatchRefnos(JObject body)
+    {
+        JArray values = body["refnos"] as JArray;
+        if (values == null || values.Count < 1 || values.Count > 16 ||
+            values.Any(value => value.Type != JTokenType.String))
+            throw new ArgumentException("refnos must be an array of 1 to 16 canonical numeric references.");
+        var result = new string[values.Count];
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        for (int index = 0; index < values.Count; index++)
+        {
+            var item = new JObject { ["refno"] = values[index] };
+            string refno = ReadElementAncestryRefno(item);
+            if (!seen.Add(refno))
+                throw new ArgumentException("refnos must not contain duplicates.");
+            result[index] = refno;
+        }
+        return result;
+    }
+
     private static string ReadElementAncestryErrorText(string message)
     {
         if (string.IsNullOrEmpty(message)) return "Element ancestry could not be read.";
@@ -2260,6 +2327,11 @@ public sealed class E3d21HttpAdapter : IDisposable
 public interface IElementAncestryContext
 {
     object ElementAncestry(string refno, int maxDepth);
+}
+
+public interface IElementAncestryBatchContext
+{
+    object ElementAncestryBatch(string[] refnos, int maxDepth);
 }
 
 /// <summary>

@@ -136,6 +136,16 @@ def element_ancestry_parameters(refno: Any, max_depth: Any = 32) -> dict[str, An
     return {"refno": refno, "max_depth": max_depth}
 
 
+def element_ancestry_batch_parameters(refnos: Any, max_depth: Any = 32) -> dict[str, Any]:
+    """Preserve a bounded ordered batch of distinct explicit native identities."""
+    if not isinstance(refnos, list) or not 1 <= len(refnos) <= 16:
+        raise ValueError("refnos must contain 1 to 16 unique canonical numeric references")
+    references = [element_ancestry_parameters(value, max_depth)["refno"] for value in refnos]
+    if len(set(references)) != len(references):
+        raise ValueError("refnos must not contain duplicate references")
+    return {"refnos": references, "max_depth": max_depth}
+
+
 def spatial_map_status_parameters(database_number: Any, extract_number: Any,
                                   expected_context: Any = "") -> dict[str, Any]:
     values = {"database_number": database_number, "extract_number": extract_number}
@@ -318,7 +328,7 @@ def _response_failure_diagnostics(path: str, value: dict[str, Any]) -> dict[str,
     # An ancestry read can fail after returning some native reference/context
     # evidence without latching a database fault. Preserve that bounded result
     # independently of the write-outcome diagnostic route set.
-    if (path in _NATIVE_RESULT_DIAGNOSTIC_PATHS or path == "/api/v1/element/ancestry") and isinstance(value.get("result"), dict):
+    if (path in _NATIVE_RESULT_DIAGNOSTIC_PATHS or path in {"/api/v1/element/ancestry", "/api/v1/element/ancestry-batch"}) and isinstance(value.get("result"), dict):
         diagnostics["result"] = value["result"]
     if path in _PARAGON_COMPONENT_PATHS:
         for key in ("version", "session_id", "bridge_build", "error_code"):
@@ -372,7 +382,7 @@ def _response_failure_diagnostics(path: str, value: dict[str, Any]) -> dict[str,
             if isinstance(value.get(key), bool):
                 diagnostics[key] = value[key]
     if path in {"/health", "/api/v1/database/team-identity-manifest", "/api/v1/module/context",
-                "/api/v1/element/ancestry",
+                "/api/v1/element/ancestry", "/api/v1/element/ancestry-batch",
                 "/api/v1/paragon/catalogue-manifest", "/api/v1/paragon/catalogue-schema",
                 "/api/v1/paragon/component-template", "/api/v1/paragon/reference-trace",
                 "/api/v1/piping/specification-read"} | _PARAGON_COMPONENT_PATHS:
@@ -539,7 +549,7 @@ class BridgeClient:
         # readiness/coherence gates. Other routes (including project, whose
         # native envelope lacks version) keep their existing routing metadata.
         if path not in {"/health", "/api/v1/messages/window", "/api/v1/equipment/child-schema",
-                        "/api/v1/element/ancestry",
+                        "/api/v1/element/ancestry", "/api/v1/element/ancestry-batch",
                         "/api/v1/piping/specification-read", "/api/v1/database/team-identity-manifest",
                         "/api/v1/module/context", "/api/v1/paragon/catalogue-manifest",
                         "/api/v1/paragon/catalogue-schema", "/api/v1/paragon/component-template",
@@ -1517,6 +1527,23 @@ class BridgeClient:
                                "Native element ancestry is unavailable in mock mode."}],
             }}
         return self._request("POST", "/api/v1/element/ancestry", payload, version=selected)
+
+    def element_ancestry_batch(self, refnos: list[str], max_depth: int = 32,
+                               version: str | None = None) -> dict[str, Any]:
+        payload = element_ancestry_batch_parameters(refnos, max_depth)
+        selected = self._selected_version(version)
+        if selected != "E3D21" or self.settings.mode == "mock":
+            unsupported = selected != "E3D21"
+            return {"ok": True, "version": selected, "result": {
+                "success": False, "available": False, "complete": False, "read_only": True,
+                "source": "unsupported" if unsupported else "mock", **payload,
+                "mdb_membership_complete": False,
+                "read_errors": [{"path": "element_ancestry_batch",
+                    "code": "unsupported_version" if unsupported else "native_unavailable",
+                    "message": "Batch element ancestry is implemented only for E3D21." if unsupported else
+                               "Native batch element ancestry is unavailable in mock mode."}],
+            }}
+        return self._request("POST", "/api/v1/element/ancestry-batch", payload, version=selected)
 
     def measure_elements_batch(self, refnos: list[str], measurements: list[str], wrt: str = "WORLD",
                                volume_scope: str = "element", version: str | None = None) -> dict[str, Any]:

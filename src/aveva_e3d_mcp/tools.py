@@ -405,6 +405,7 @@ def create_server(settings: Settings | None = None) -> McpServer:
         "Use e3d_compare_diagnostic_receipts with two retained IDs to compare historical target, geometry, display, camera/selection and image metadata without new native reads. Check compatibility, per-section availability, traversal limits and each diagnosis's unknowns; payload equality does not prove no model change or successful engineering work. "
         "Use e3d_database_state on E3D21 to inspect MDB database access flags and session identifiers; retain its context_id when paging and check page_complete/read_errors. These flags do not establish edit permission or SAVEWORK safety. "
         "Use e3d_element_ancestry with an explicit numeric refno to read raw SDK and formatted references, OWNER ancestry, WORLD frame and database identity/MDB membership. Preserve unknown identities and incomplete reads; formatted references must not replace raw references or supply inferred database numbers. "
+        "Use e3d_element_ancestry_batch for 1 to 16 unique numeric references with one shared MDB scan and UI callback; inspect shared context/errors and ordered per-target status, including not_started after a native fault. "
         "Use e3d_element_access for current-session access and target claim observations on 1 to 32 explicit references. Preserve nullable value/status/source fields, scan_complete and all_values_available; success does not establish future write permission or claimability. Claims are not refreshed, and PRMOWN is returned only as a reference. "
         "e3d_spatial_map_status currently resolves database identity but suspends native CheckSpatialMap after an E3D21 stack-overflow crash; expect native_spatial_map_check_suspended, check_attempted=false and status=null. Do not retry via PML MAP CHECK or build maps as a workaround. Historical NOWARNINGS is distinct from UPTODATE and does not itself prove geometry correctness. "
         "Use e3d_query for direct references or a bounded global lookup; use e3d_find_descendants for explicit-root paged searches with completeness diagnostics. Use e3d_element_snapshot for hierarchy, e3d_list_members for paged direct children, e3d_read_attributes for native values, "
@@ -545,6 +546,8 @@ def create_server(settings: Settings | None = None) -> McpServer:
     register_database_tools(server, bridge)
     from .element_ancestry import register_element_ancestry
     register_element_ancestry(server, bridge)
+    from .element_ancestry_batch import register_element_ancestry_batch
+    register_element_ancestry_batch(server, bridge)
     from .team_database_identity import register_team_database_identity_manifest
     register_team_database_identity_manifest(server, bridge)
     from .branch_snapshot import register_branch_tools
