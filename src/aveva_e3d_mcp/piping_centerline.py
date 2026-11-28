@@ -75,6 +75,51 @@ def _cross(a: list[float], b: list[float]) -> list[float]:
     return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
 
 
+def _segment_distance_mm(p0: list[float], p1: list[float], q0: list[float], q1: list[float]) -> float:
+    """Return the minimum 3D distance between two finite line segments."""
+    u, v, w = _sub(p1, p0), _sub(q1, q0), _sub(p0, q0)
+    a, b, c = _dot(u, u), _dot(u, v), _dot(v, v)
+    d, e = _dot(u, w), _dot(v, w)
+    cross_uv = _cross(u, v)
+    denominator = _dot(cross_uv, cross_uv)
+    product_scale = max(abs(u[i] * v[j]) for i in range(3) for j in range(3) if i != j)
+    parallel = math.hypot(*cross_uv) <= 8 * math.ulp(product_scale) if product_scale else True
+
+    if parallel:
+        s_num, s_den, t_num, t_den = 0.0, 1.0, e, c
+    else:
+        s_den = t_den = denominator
+        # Cross-product forms avoid subtracting two nearly equal O(L^4)
+        # terms when long segments meet at a shallow angle.
+        s_num = -_dot(_cross(w, v), cross_uv)
+        t_num = -_dot(_cross(w, u), cross_uv)
+        if s_num < 0:
+            s_num, t_num, t_den = 0.0, e, c
+        elif s_num > s_den:
+            s_num, t_num, t_den = s_den, e + b, c
+
+    if t_num < 0:
+        t_num = 0.0
+        if -d < 0:
+            s_num, s_den = 0.0, 1.0
+        elif -d > a:
+            s_num, s_den = 1.0, 1.0
+        else:
+            s_num, s_den = -d, a
+    elif t_num > t_den:
+        t_num = t_den
+        if -d + b < 0:
+            s_num, s_den = 0.0, 1.0
+        elif -d + b > a:
+            s_num, s_den = 1.0, 1.0
+        else:
+            s_num, s_den = -d + b, a
+
+    s = 0.0 if abs(s_num) <= 1e-30 else s_num / s_den
+    t = 0.0 if abs(t_num) <= 1e-30 else t_num / t_den
+    return math.hypot(*(w[axis] + s * u[axis] - t * v[axis] for axis in range(3)))
+
+
 def _unit(vector: list[float]) -> list[float]:
     length = math.hypot(*vector)
     return [value / length for value in vector]
@@ -165,8 +210,9 @@ def plan_centerline(options: dict[str, Any], endpoints: list[dict[str, Any]]) ->
         "diagnostics": [], "catalogue_verified": False, "planned_member_geometry_verified": False,
         "execution_prepared": False,
         "scope": "Analytic straight/circular centreline with caller-supplied radius, minimum straight and direction senses. "
-                 "Checks local bend space and endpoint tangents only. Does not check self-intersections, obstacles, "
-                 "clearance, selected catalogue dimensions, pipe outside diameter, specifications or engineering suitability. "
+                 "Checks local bend space, endpoint tangents and non-adjacent intersections in the input waypoint polyline. "
+                 "The polyline check does not test the filleted arcs, obstacles, clearance, selected catalogue dimensions, "
+                 "pipe outside diameter, specifications or engineering suitability. "
                  "Does not assign E3D ELBO POS/ORI/SPREF or verify the separate planned_members geometry.",
     }
     if first["position_world_mm"] is None or last["position_world_mm"] is None:
@@ -182,6 +228,33 @@ def plan_centerline(options: dict[str, Any], endpoints: list[dict[str, Any]]) ->
         if length <= max(options["position_tolerance_mm"], epsilon):
             result["diagnostics"].append({"code": "coincident_or_short_leg", "vertex_indices": [index, index + 1],
                                            "length_mm": length})
+    if result["diagnostics"]:
+        result.update(status="geometrically_blocked", geometry_fits=False, geometric_fit=False)
+        return result
+
+    for index in range(1, len(vertices) - 1):
+        incoming = _unit(_sub(vertices[index], vertices[index - 1]))
+        outgoing = _unit(_sub(vertices[index + 1], vertices[index]))
+        if math.hypot(*_cross(incoming, outgoing)) <= 1e-12 and _dot(incoming, outgoing) < 0:
+            result["diagnostics"].append({"code": "route_reversal", "vertex_index": index})
+    if result["diagnostics"]:
+        result.update(status="geometrically_blocked", geometry_fits=False, geometric_fit=False)
+        return result
+
+    # Only non-adjacent input edges can cross without sharing an intentional
+    # waypoint. This finite-segment distance test is in 3D, not an arc or
+    # clearance test; the threshold covers floating-point rounding at WORLD scale.
+    for first_segment in range(len(vertices) - 1):
+        for second_segment in range(first_segment + 2, len(vertices) - 1):
+            separation = _segment_distance_mm(vertices[first_segment], vertices[first_segment + 1],
+                                              vertices[second_segment], vertices[second_segment + 1])
+            if separation <= epsilon:
+                result["diagnostics"].append({
+                    "code": "waypoint_polyline_self_intersection",
+                    "segment_indices": [first_segment, second_segment],
+                    "separation_mm": separation,
+                    "rounding_tolerance_mm": epsilon,
+                })
     if result["diagnostics"]:
         result.update(status="geometrically_blocked", geometry_fits=False, geometric_fit=False)
         return result

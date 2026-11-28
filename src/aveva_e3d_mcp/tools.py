@@ -562,6 +562,8 @@ def create_server(settings: Settings | None = None) -> McpServer:
     register_equipment_model_plan(server, bridge, settings)
     from .piping_route_plan import register_piping_route_plan
     register_piping_route_plan(server, bridge)
+    from .piping_batch_route_plan import register_piping_batch_route_plan
+    register_piping_batch_route_plan(server, bridge)
     from .piping_native_route import register_native_piping_route
     register_native_piping_route(server, bridge)
     from .modeling_team import register_modeling_team

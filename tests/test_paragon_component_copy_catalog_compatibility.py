@@ -32,7 +32,7 @@ class ParagonComponentCopyCatalogCompatibilityTests(unittest.TestCase):
         after = {tool["name"]: tool for tool in current}
         self.assertEqual(len(before), 115)
         self.assertEqual(len(after), CURRENT_MOCK_TOOL_COUNT)
-        self.assertEqual(set(after) - set(before), {"e3d_paragon_component_copy", "e3d_paragon_component_copy_status", "e3d_paragon_component_parameters_set", "e3d_paragon_component_parameters_status", "e3d_paragon_generate_from_standard", "e3d_paragon_component_create", "e3d_paragon_component_create_status", "e3d_piping_route_create", "e3d_piping_route_verify", *MODELING_TEAM_TOOLS, *E3D_IDENTITY_TOOLS})
+        self.assertEqual(set(after) - set(before), {"e3d_paragon_component_copy", "e3d_paragon_component_copy_status", "e3d_paragon_component_parameters_set", "e3d_paragon_component_parameters_status", "e3d_paragon_generate_from_standard", "e3d_paragon_component_create", "e3d_paragon_component_create_status", "e3d_piping_route_create", "e3d_piping_route_verify", "e3d_piping_batch_route_plan", *MODELING_TEAM_TOOLS, *E3D_IDENTITY_TOOLS})
         self.assertEqual(set(before) - set(after), set())
         for name, definition in before.items():
             with self.subTest(tool=name):

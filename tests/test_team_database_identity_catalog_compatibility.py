@@ -16,7 +16,7 @@ from catalog_compatibility import CURRENT_MOCK_TOOL_COUNT, MODELING_TEAM_TOOLS, 
 
 BASELINE = ROOT / "tests/fixtures/team_database_identity_catalog111.json"
 BASELINE_SHA256 = "d978cd04ad41be67dfbcc4618fd2dbc55ee02b939622f9153b8a76e8d55f92db"
-ADDED_TOOLS = {"e3d_team_database_identity_manifest", "e3d_paragon_generation_plan", "e3d_paragon_component_template", "e3d_paragon_reference_trace", "e3d_paragon_component_copy", "e3d_paragon_component_copy_status", "e3d_paragon_component_parameters_set", "e3d_paragon_component_parameters_status", "e3d_paragon_generate_from_standard", "e3d_paragon_component_create", "e3d_paragon_component_create_status", "e3d_piping_route_create", "e3d_piping_route_verify", *MODELING_TEAM_TOOLS, *E3D_IDENTITY_TOOLS}
+ADDED_TOOLS = {"e3d_team_database_identity_manifest", "e3d_paragon_generation_plan", "e3d_paragon_component_template", "e3d_paragon_reference_trace", "e3d_paragon_component_copy", "e3d_paragon_component_copy_status", "e3d_paragon_component_parameters_set", "e3d_paragon_component_parameters_status", "e3d_paragon_generate_from_standard", "e3d_paragon_component_create", "e3d_paragon_component_create_status", "e3d_piping_route_create", "e3d_piping_route_verify", "e3d_piping_batch_route_plan", *MODELING_TEAM_TOOLS, *E3D_IDENTITY_TOOLS}
 
 
 class TeamDatabaseIdentityCatalogCompatibilityTests(unittest.TestCase):

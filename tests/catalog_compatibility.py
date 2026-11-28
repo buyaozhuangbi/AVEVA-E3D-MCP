@@ -5,7 +5,7 @@ from copy import deepcopy
 
 # Reviewed public catalogue expectations. Keep these independent of the live
 # registry so discovery tests still detect missing or duplicated registrations.
-CURRENT_MOCK_TOOL_COUNT = 130
+CURRENT_MOCK_TOOL_COUNT = 131
 E3D_IDENTITY_TOOLS = frozenset({"e3d_element_ancestry", "e3d_element_ancestry_batch"})
 MODELING_TEAM_TOOLS = frozenset({
     "e3d_modeling_team_submit", "e3d_modeling_team_plan",
@@ -130,7 +130,7 @@ POST_0_2_1_PARAGON_TOOLS = {
     "e3d_paragon_reference_trace", "e3d_paragon_component_copy", "e3d_paragon_component_copy_status",
     "e3d_paragon_component_parameters_set", "e3d_paragon_component_parameters_status",
     "e3d_paragon_generate_from_standard", "e3d_paragon_component_create", "e3d_paragon_component_create_status",
-    "e3d_piping_route_create", "e3d_piping_route_verify", *MODELING_TEAM_TOOLS, *E3D_IDENTITY_TOOLS,
+    "e3d_piping_route_create", "e3d_piping_route_verify", "e3d_piping_batch_route_plan", *MODELING_TEAM_TOOLS, *E3D_IDENTITY_TOOLS,
 }
 
 _MODELING_DESCRIPTION_EDITS = {

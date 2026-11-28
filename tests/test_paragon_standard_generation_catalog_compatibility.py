@@ -23,8 +23,8 @@ def test_release_version_and_additive_tool_catalog():
     current = {row["name"]: row for row in reply["result"]["tools"]}
     assert len(old) == 119
     assert len(reply["result"]["tools"]) == len(current) == CURRENT_MOCK_TOOL_COUNT
-    assert set(current) - set(old) == {"e3d_paragon_generate_from_standard", "e3d_paragon_component_create", "e3d_paragon_component_create_status", "e3d_piping_route_create", "e3d_piping_route_verify", *MODELING_TEAM_TOOLS, *E3D_IDENTITY_TOOLS}
+    assert set(current) - set(old) == {"e3d_paragon_generate_from_standard", "e3d_paragon_component_create", "e3d_paragon_component_create_status", "e3d_piping_route_create", "e3d_piping_route_verify", "e3d_piping_batch_route_plan", *MODELING_TEAM_TOOLS, *E3D_IDENTITY_TOOLS}
     assert {name: current[name] for name in old} == {
         name: with_transform_additions(with_modeling_additions(row)) for name, row in old.items()}
     package = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    assert package["project"]["version"] == server.version == __version__ == "0.2.6"
+    assert package["project"]["version"] == server.version == __version__ == "0.2.7"

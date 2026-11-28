@@ -16,7 +16,7 @@ from catalog_compatibility import CURRENT_MOCK_TOOL_COUNT, MODELING_TEAM_TOOLS, 
 
 BASELINE = ROOT / "tests/fixtures/paragon_component_parameters_catalog117.json"
 BASELINE_SHA256 = "d9cb586289dc584e05b6ad84379cdb9b05b7096abffb9d6aadddc14c8e9fb04e"
-ADDED = {"e3d_paragon_component_parameters_set", "e3d_paragon_component_parameters_status", "e3d_paragon_generate_from_standard", "e3d_paragon_component_create", "e3d_paragon_component_create_status", "e3d_piping_route_create", "e3d_piping_route_verify", *MODELING_TEAM_TOOLS, *E3D_IDENTITY_TOOLS}
+ADDED = {"e3d_paragon_component_parameters_set", "e3d_paragon_component_parameters_status", "e3d_paragon_generate_from_standard", "e3d_paragon_component_create", "e3d_paragon_component_create_status", "e3d_piping_route_create", "e3d_piping_route_verify", "e3d_piping_batch_route_plan", *MODELING_TEAM_TOOLS, *E3D_IDENTITY_TOOLS}
 
 
 class ParagonComponentParametersCatalogCompatibilityTests(unittest.TestCase):

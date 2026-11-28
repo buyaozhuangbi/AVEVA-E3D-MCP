@@ -5,8 +5,8 @@
 ## 能力介绍
 
 - **看懂模型和工程状态**：读取设备、管道、元件层级、属性、连接点、数据库身份和当前会话信息；支持一次核对一至十六个元素的原生祖先链，共用 MDB 身份扫描；结果来自 E3D，不靠模型猜测。
-- **辅助管道布置和落模**：根据中心线路径规划直管与弯头，支持创建原生 PIPE、BRAN、ELBO 和 E3D 自动生成的 TUBI，并在执行前预览、执行后读回核对。
-- **协助设备建模**：检查设备结构和可建类型，预览后创建或复制受支持的元素，并核对实际写入结果；也能查看设备位置和外形。
+- **辅助管道布置和落模**：可批量指定管道头尾 P-point，实时计算并排序路径候选、提示路线折线接触；也能根据确认后的中心线创建原生 PIPE、BRAN、ELBO 和 E3D 自动生成的 TUBI，并在执行前预览、执行后读回核对。
+- **协助设备建模**：检查设备结构和可建类型，预览后创建或复制受支持的元素，并核对实际写入结果；多目标变换计划还会给出 BOX/CYLI 包围盒重叠提示。
 - **让多个 Agent 一起做建模任务**：不同 Agent 可以各自准备管道或设备任务，再由一个 workflow 检查依赖并按顺序执行。每一步都会重新预览和核对回执，失败或结果不确定时会停下来，不自动重放。
 - **推进 PARAGON 元件库建设**：浏览 CATA、检查目录 Schema、创建或复制 SCOM、更新 PARAM，并追踪 PTSE、GMSE 等引用。
 - **调试 E3D 插件和自动化**：查看连接状态、日志和 E3D 消息，执行受控 PML，检查命令状态与原生诊断证据。
@@ -34,7 +34,9 @@ Mock 模式不需要启动 E3D，适合连接 MCP 客户端和查看工具。Cod
 
 - [连接 E3D 2.1 与构建 Addin](#连接-e3d-21)
 - [多 Agent 建模工作流](docs/modeling-team-workflows.md)
+- [设备建模计划与空间提示](docs/equipment-model-plan.md)
 - [原生管道落模](docs/piping-native-route.md)
+- [批量管道链接与路径优化](docs/piping-batch-routing.md)
 - [PARAGON 元件库工作流](docs/paragon-library-workflow.md)
 - [PARAGON CATA 建库核验](docs/paragon-database-creation.md)
 - [原生祖先与批量数据库身份查询](docs/element-ancestry.md)

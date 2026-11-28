@@ -18,7 +18,7 @@ from catalog_compatibility import (CURRENT_MOCK_TOOL_COUNT, MODELING_TEAM_TOOLS,
 
 BASELINE = ROOT / "tests/fixtures/paragon_component_template_catalog113.json"
 BASELINE_SHA256 = "2362d9130af2d5a453e23325cc996143fa7beacf9fce5fe82cffed399b38e179"
-ADDED_TOOLS = {"e3d_paragon_component_template", "e3d_paragon_reference_trace", "e3d_paragon_component_copy", "e3d_paragon_component_copy_status", "e3d_paragon_component_parameters_set", "e3d_paragon_component_parameters_status", "e3d_paragon_generate_from_standard", "e3d_paragon_component_create", "e3d_paragon_component_create_status", "e3d_piping_route_create", "e3d_piping_route_verify", *MODELING_TEAM_TOOLS, *E3D_IDENTITY_TOOLS}
+ADDED_TOOLS = {"e3d_paragon_component_template", "e3d_paragon_reference_trace", "e3d_paragon_component_copy", "e3d_paragon_component_copy_status", "e3d_paragon_component_parameters_set", "e3d_paragon_component_parameters_status", "e3d_paragon_generate_from_standard", "e3d_paragon_component_create", "e3d_paragon_component_create_status", "e3d_piping_route_create", "e3d_piping_route_verify", "e3d_piping_batch_route_plan", *MODELING_TEAM_TOOLS, *E3D_IDENTITY_TOOLS}
 PLAN = "e3d_paragon_generation_plan"
 PLAN_DESCRIPTION = (
     "Compose one review draft for copying an existing SCOM leaf within the same explicit Catalogue CATE. "

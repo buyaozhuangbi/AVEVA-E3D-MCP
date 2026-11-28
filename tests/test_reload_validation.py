@@ -7,7 +7,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from reload_validation import validate_project_reload
+from reload_validation import create_restart_journal, validate_project_reload
 
 
 def project(**changes):
@@ -19,6 +19,19 @@ def project(**changes):
     }
     value.update(changes)
     return value
+
+
+def test_restart_journal_is_reserved_exclusively_and_preserves_existing_file(tmp_path):
+    report = tmp_path / "nested" / "restart.json"
+    initial = {"passed": False, "calls": [], "design_replayed": False}
+
+    create_restart_journal(report, initial)
+
+    original = report.read_bytes()
+    assert b'"passed": false' in original
+    with pytest.raises(FileExistsError):
+        create_restart_journal(report, {"passed": True})
+    assert report.read_bytes() == original
 
 
 def test_design_current_element_change_is_recorded_not_rejected():

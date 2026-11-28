@@ -33,7 +33,7 @@ ROUTES = (
 # Captured before component-create registration, from all 120 public tool
 # definitions (including their descriptions and complete input schemas).
 OLD_CATALOG_SHA256 = "e1dc7b91adb05e6a233509209734992b3939eca7c5456e6822cfdc3723841377"
-NEW_TOOLS = {"e3d_paragon_component_create", "e3d_paragon_component_create_status", "e3d_piping_route_create", "e3d_piping_route_verify", *MODELING_TEAM_TOOLS, *E3D_IDENTITY_TOOLS}
+NEW_TOOLS = {"e3d_paragon_component_create", "e3d_paragon_component_create_status", "e3d_piping_route_create", "e3d_piping_route_verify", "e3d_piping_batch_route_plan", *MODELING_TEAM_TOOLS, *E3D_IDENTITY_TOOLS}
 
 
 def _selected_handler(adapter: str) -> str:

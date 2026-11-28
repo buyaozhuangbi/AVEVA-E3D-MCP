@@ -149,6 +149,7 @@ class FakeBridge:
         self.child_schema_calls: list[dict] = []
         self.transform_calls: list[tuple] = []
         self.spatial_calls: list[tuple] = []
+        self.primitive_calls: list[str] = []
         self.drift = drift
 
     def _selected_version(self, version):
@@ -194,8 +195,9 @@ class FakeBridge:
 
     def spatial_info(self, refno, wrt):
         self.spatial_calls.append((refno, wrt))
+        kind = "BOX" if refno == "=1/4" else "CYLI"
         return {"ok": True, "version": "E3D21", "session_id": "session-a", "bridge_build": "build-a", "result": {
-            "success": True, "complete": True, "refno": refno, "type": "CYLI",
+            "success": True, "complete": True, "refno": refno, "type": kind,
             "project": "PROJECT", "project_after": "PROJECT", "mdb": "DESIGN", "mdb_after": "DESIGN",
             "ce_before": "=1/90", "ce_after": "=1/90", "identity_unchanged": True, "ce_unchanged": True,
             "context": endpoint_context(), "errors": {},
@@ -204,6 +206,19 @@ class FakeBridge:
             "position": {"available": True, "unit": "mm", "x": 0.0, "y": 0.0, "z": 0.0},
             "orientation": {"available": True, "x_axis": [1.0, 0.0, 0.0],
                             "y_axis": [0.0, 1.0, 0.0], "z_axis": [0.0, 0.0, 1.0]},
+        }}
+
+    def primitive_geometry(self, refno):
+        self.primitive_calls.append(refno)
+        kind = "BOX" if refno == "=1/4" else "CYLI"
+        dimensions = {"XLEN": 10.0, "YLEN": 10.0, "ZLEN": 10.0} if kind == "BOX" else {
+            "DIAM": 10.0, "HEIG": 20.0}
+        return {"ok": True, "version": "E3D21", "result": {
+            "success": True, "complete": True, "read_errors": {}, "shape": kind,
+            "negative": False, "negative_children": [], "unit": "mm", "dimensions": dimensions,
+            "element": {"refno": refno, "type": kind},
+            "frame": {"world": {"position": [0.0, 0.0, 0.0], "orientation": {
+                "x_axis": [1.0, 0.0, 0.0], "y_axis": [0.0, 1.0, 0.0], "z_axis": [0.0, 0.0, 1.0]}}},
         }}
 
 
@@ -314,7 +329,64 @@ class EquipmentModelPlanTests(unittest.TestCase):
         self.assertEqual(transform["requested_transform"]["converted"]["status"], "complete")
         self.assertEqual(bridge.transform_calls[0][0], "=1/2")
         self.assertEqual(bridge.spatial_calls, [("=1/3", "WORLD")])
+        self.assertEqual(bridge.primitive_calls, [])
         self.assertNotIn("create_element", bridge.__dict__)
+
+    def test_spatial_review_reports_transform_overlap_without_blocking_plan(self):
+        bridge = FakeBridge()
+        result = self._steps(bridge, [
+            {"step_id": "move-cylinder", "operation": "transform", "target_refno": "=1/3",
+             "position": [0, 0, 0]},
+            {"step_id": "move-box", "operation": "transform", "target_refno": "=1/4",
+             "position": [8, 0, 0]},
+        ])
+        review = result["spatial_review"]
+        self.assertEqual(result["status"], "ready")
+        self.assertEqual(result["write_viability"], "candidate_for_native_preview")
+        self.assertTrue(review["available"])
+        self.assertTrue(review["complete"])
+        self.assertEqual([refno for refno in bridge.primitive_calls], ["=1/3", "=1/4"])
+        self.assertEqual(review["pairs"][0]["status"], "overlap_candidate")
+        self.assertEqual([row["code"] for row in review["diagnostics"]], ["overlap_candidate"])
+        self.assertEqual(result["model_writes"], 0)
+        self.assertFalse(result["writes_attempted"])
+
+    def test_spatial_review_unknown_geometry_is_advisory_only(self):
+        bridge = FakeBridge()
+        original = bridge.primitive_geometry
+        def incomplete(refno):
+            sample = original(refno)
+            sample["result"]["complete"] = False
+            return sample
+        bridge.primitive_geometry = incomplete
+        result = self._steps(bridge, [
+            {"step_id": "move-cylinder", "operation": "transform", "target_refno": "=1/3",
+             "position": [0, 0, 0]},
+            {"step_id": "move-box", "operation": "transform", "target_refno": "=1/4",
+             "position": [8, 0, 0]},
+        ])
+        self.assertEqual(result["status"], "ready")
+        self.assertFalse(result["spatial_review"]["complete"])
+        self.assertTrue(all(pair["status"] == "unknown" for pair in result["spatial_review"]["pairs"]))
+        self.assertEqual(result["write_viability"], "candidate_for_native_preview")
+
+    def test_spatial_review_does_not_guess_repeated_target_transform_order(self):
+        bridge = FakeBridge()
+        result = self._steps(bridge, [
+            {"step_id": "move-cylinder-a", "operation": "transform", "target_refno": "=1/3",
+             "position": [0, 0, 0]},
+            {"step_id": "move-box", "operation": "transform", "target_refno": "=1/4",
+             "position": [8, 0, 0]},
+            {"step_id": "move-cylinder-b", "operation": "transform", "target_refno": "=1/3",
+             "position": [30, 0, 0]},
+        ])
+        review = result["spatial_review"]
+        self.assertEqual(result["status"], "ready")
+        self.assertEqual(review["status"], "partial")
+        cylinder = next(row for row in review["targets"] if row["refno"] == "=1/3")
+        self.assertEqual(cylinder["reason"], "repeated_target_transform_order_not_simulated")
+        self.assertEqual(bridge.primitive_calls, ["=1/4"])
+        self.assertEqual(review["pairs"][0]["status"], "unknown")
 
     @staticmethod
     def _preview_bridge(revision):

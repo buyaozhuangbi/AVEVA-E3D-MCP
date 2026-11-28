@@ -1,7 +1,8 @@
 """Load an already staged adapter with one registered MCP SAVEWORK+DESIGN call.
 
-Observe the new build, unchanged project/MDB and empty startup Drawlist. View
-restoration is a separate explicit option, never part of Addin startup.
+Reserve a unique durable journal before touching E3D. Observe the new build,
+project/MDB identity and empty startup Drawlist. View restoration is a separate
+explicit option, never part of Addin startup.
 """
 import argparse
 import json
@@ -9,7 +10,7 @@ import os
 import time
 from pathlib import Path
 from live_mcp import LiveMcp
-from reload_validation import validate_project_reload
+from reload_validation import create_restart_journal, validate_project_reload
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--build', required=True)
@@ -17,8 +18,8 @@ parser.add_argument('--feature', action='append', default=[])
 parser.add_argument('--report', type=Path, required=True)
 parser.add_argument('--restore-view', action='store_true')
 args = parser.parse_args()
-assert not args.report.exists(), 'Never replay an existing restart journal'
 state = {'passed': False, 'calls': [], 'design_replayed': False}
+create_restart_journal(args.report, state)
 
 
 def persist():

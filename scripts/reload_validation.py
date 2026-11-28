@@ -2,7 +2,21 @@
 
 from __future__ import annotations
 
+import json
+import os
 from typing import Any
+from pathlib import Path
+
+
+def create_restart_journal(report: Path, state: dict[str, Any]) -> None:
+    """Reserve a new restart journal without racing another verifier."""
+    report.parent.mkdir(parents=True, exist_ok=True)
+    # Exclusive creation is the safety boundary: two verifier processes must
+    # never both get far enough to issue SAVEWORK/DESIGN for the same report.
+    with report.open("x", encoding="utf-8") as stream:
+        json.dump(state, stream, ensure_ascii=False, indent=2)
+        stream.flush()
+        os.fsync(stream.fileno())
 
 
 def validate_project_reload(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:

@@ -11,7 +11,9 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from aveva_e3d_mcp.piping_centerline import centerline_options, centerline_schema, plan_centerline
+from aveva_e3d_mcp.piping_centerline import (
+    _segment_distance_mm, centerline_options, centerline_schema, plan_centerline,
+)
 from aveva_e3d_mcp.protocol import _schema_matches
 
 
@@ -152,6 +154,78 @@ def test_degenerate_routes_are_explicitly_blocked(waypoints, code):
     assert result["elements"] == []
     assert code in {row["code"] for row in result["diagnostics"]}
     json.dumps(result, allow_nan=False)
+
+
+@pytest.mark.parametrize("first,second,expected", [
+    (([0, 0, 0], [100, 100, 0]), ([0, 100, 0], [100, 0, 0]), 0),
+    (([0, 0, 0], [100, 0, 0]), ([50, -10, 1], [50, 10, 1]), 1),
+    (([0, 0, 0], [100, 0, 0]), ([0, 0, 0.0001], [100, 0, 0.0001]), 0.0001),
+    (([0, 0, 0], [100, 0, 0]), ([75, 0, 0], [25, 0, 0]), 0),
+    (([0, 0, 0], [100, 0, 0]), ([100, 0, 0], [100, 0, 100]), 0),
+])
+def test_segment_distance_is_finite_three_dimensional_and_handles_overlap(first, second, expected):
+    assert _segment_distance_mm(*first, *second) == pytest.approx(expected, abs=1e-9)
+
+
+def test_segment_distance_is_stable_at_large_world_offsets():
+    shift = [999999000.0, -999999000.0, 999999000.0]
+    translate = lambda point: [shift[index] + point[index] for index in range(3)]
+    assert _segment_distance_mm(translate([0, 0, 0]), translate([100, 100, 0]),
+                                translate([0, 100, 0]), translate([100, 0, 0])) <= 1e-5
+
+
+def test_segment_distance_detects_shallow_crossing_of_long_segments():
+    # A dot-product Gram determinant loses the small angular component here.
+    # The segments cross at x=300,000,000 mm despite their 1e-7 rad angle.
+    separation = _segment_distance_mm([0, 0, 0], [1_000_000_000, 0, 0],
+                                      [100_000_000, -20, 0], [900_000_000, 60, 0])
+    assert separation <= 1e-5
+
+
+def test_planner_blocks_a_shallow_crossing_in_long_world_segments():
+    diagonal = 1 / math.sqrt(2)
+    options = {**OPTIONS,
+        "waypoints_world_mm": [[1_000_000_000, 0, 0], [100_000_000, -20, 0], [900_000_000, 60, 0]],
+        "bend_radius_mm": 0.000001, "minimum_straight_mm": 0}
+    groups = [endpoint([0, 0, 0], [1, 0, 0]),
+              endpoint([1_000_000_000, 100_000_000, 0], [-diagonal, -diagonal, 0], number=2)]
+
+    result = plan(options, groups)
+
+    assert result["geometric_fit"] is result["geometry_fits"] is False
+    assert result["elements"] == []
+    assert any(row["code"] == "waypoint_polyline_self_intersection" and row["segment_indices"] == [0, 2]
+               for row in result["diagnostics"])
+
+
+def test_input_waypoint_polyline_crossing_blocks_route_geometry():
+    diagonal = 1 / math.sqrt(2)
+    options = {**OPTIONS, "waypoints_world_mm": [[100, 100, 0], [0, 100, 0]],
+               "bend_radius_mm": 1, "minimum_straight_mm": 0}
+    groups = [endpoint([0, 0, 0], [diagonal, diagonal, 0]),
+              endpoint([100, 0, 0], [-diagonal, diagonal, 0], number=2)]
+
+    result = plan(options, groups)
+
+    assert result["geometric_fit"] is result["geometry_fits"] is False
+    assert result["elements"] == []
+    assert result["centerline_length_mm"] is None
+    intersection = next(row for row in result["diagnostics"]
+                        if row["code"] == "waypoint_polyline_self_intersection")
+    assert intersection["segment_indices"] == [0, 2]
+    assert intersection["separation_mm"] <= intersection["rounding_tolerance_mm"]
+
+
+def test_projected_crossing_with_world_separation_is_not_a_polyline_intersection():
+    diagonal = 1 / math.sqrt(2)
+    options = {**OPTIONS, "waypoints_world_mm": [[100, 100, 0], [0, 100, 10]],
+               "bend_radius_mm": 1, "minimum_straight_mm": 0}
+    groups = [endpoint([0, 0, 0], [diagonal, diagonal, 0]),
+              endpoint([100, 0, 10], [-diagonal, diagonal, 0], number=2)]
+
+    result = plan(options, groups)
+
+    assert "waypoint_polyline_self_intersection" not in {row["code"] for row in result["diagnostics"]}
 
 
 def test_direction_sense_is_explicit_and_mismatch_is_separate_from_space():

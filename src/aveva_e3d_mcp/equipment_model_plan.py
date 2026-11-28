@@ -12,6 +12,7 @@ from .config import Settings
 from .context_snapshot import context_snapshot
 from .equipment_child_schema import equipment_child_schema, _native_fault as _child_schema_native_fault
 from .equipment_manifest import equipment_manifest
+from .equipment_spatial_review import SPATIAL_REVIEW_SCOPE, compare_world_bounds, primitive_world_aabb
 from .model_plan_preview import model_edit_preview
 from .protocol import McpServer
 
@@ -663,6 +664,102 @@ def _transform_read(bridge: BridgeClient, step: dict[str, Any], frame_ref: str |
     return {"requested": requested, "converted": converted}
 
 
+def _spatial_review(bridge: BridgeClient, steps: list[dict[str, Any]], planned: list[dict[str, Any]],
+                    evidence: dict[str, Any]) -> dict[str, Any]:
+    review: dict[str, Any] = {"requested": False, "available": False, "complete": False,
+        "status": "not_applicable", "targets": [], "pairs": [], "diagnostics": [],
+        "scope": SPATIAL_REVIEW_SCOPE}
+    selected_by_ref: dict[str, tuple[int, dict[str, Any], dict[str, Any], dict[str, Any]]] = {}
+    repeated_refs: set[str] = set()
+    for index, (step, item) in enumerate(zip(steps, planned)):
+        if step["operation"] != "transform" or not isinstance(item.get("target"), dict):
+            continue
+        identity = item["target"].get("identity")
+        refno = identity.get("refno") if isinstance(identity, dict) else None
+        key = _canonical_ref(refno) if isinstance(refno, str) else None
+        if key is None:
+            continue
+        # These steps execute in order; when a target appears more than once,
+        # their order-dependent final pose is not simulated here.
+        if key in selected_by_ref:
+            repeated_refs.add(key)
+        selected_by_ref[key] = (index, step, item, identity)
+    selected = list(selected_by_ref.values())
+    if len(selected) < 2:
+        review["diagnostics"].append({"code": "fewer_than_two_distinct_transform_targets"})
+        return review
+
+    review["requested"] = True
+    review["status"] = "partial"
+    bounded = []
+    for index, step, item, identity in selected:
+        row: dict[str, Any] = {"step_id": item.get("step_id"), "refno": identity.get("refno"),
+                               "type": identity.get("type"), "available": False, "aabb_world_mm": None}
+        key = _canonical_ref(identity["refno"])
+        kind = str(identity.get("type", "")).upper()
+        current = item.get("target", {}).get("world_pose")
+        transform = item.get("requested_transform", {}).get("converted")
+        if key in repeated_refs:
+            row["reason"] = "repeated_target_transform_order_not_simulated"
+        elif kind not in {"BOX", "CYLI"}:
+            row["reason"] = "unsupported_shape"
+        elif not isinstance(current, dict) or not _world_pose_complete(current):
+            row["reason"] = "current_world_pose_unverified"
+        elif not isinstance(transform, dict) or transform.get("status") != "complete":
+            row["reason"] = "planned_world_pose_unverified"
+        else:
+            current_position = [current["position"][axis] for axis in ("x", "y", "z")]
+            current_orientation = current["orientation"]
+            planned_position = transform.get("position_world") if step.get("position") is not None else current_position
+            requested_orientation = transform.get("orientation_world") if step.get("orientation") is not None else None
+            if requested_orientation is None:
+                planned_orientation = {key: current_orientation[key] for key in ("x_axis", "y_axis", "z_axis")}
+            else:
+                x, y = requested_orientation.get("x_axis"), requested_orientation.get("y_axis")
+                if _valid_triple(x) and _valid_triple(y):
+                    planned_orientation = {"x_axis": x, "y_axis": y,
+                        "z_axis": [x[1] * y[2] - x[2] * y[1], x[2] * y[0] - x[0] * y[2],
+                                   x[0] * y[1] - x[1] * y[0]]}
+                else:
+                    planned_orientation = None
+            try:
+                sample = bridge.primitive_geometry(identity["refno"])
+            except BridgeError as error:
+                if _child_schema_native_fault(error.diagnostics):
+                    raise
+                sample = {"ok": False, "version": "E3D21", "error": str(error),
+                          "diagnostics": error.diagnostics}
+            except (AttributeError, OSError, TimeoutError, ValueError) as error:
+                sample = {"ok": False, "version": "E3D21", "error": str(error)}
+            evidence[f"spatial_review_geometry_{index}"] = sample
+            native = sample.get("result") if isinstance(sample, dict) else None
+            if sample.get("ok") is not True or sample.get("version") != "E3D21" or not isinstance(native, dict):
+                row["reason"] = "primitive_geometry_read_unavailable"
+            else:
+                bounds = primitive_world_aabb(native, expected_refno=identity["refno"], expected_type=kind,
+                    current_position=current_position, current_orientation=current_orientation,
+                    planned_position=planned_position, planned_orientation=planned_orientation)
+                row.update(bounds)
+        if row["available"] is True:
+            bounded.append(row)
+        else:
+            review["diagnostics"].append({"code": row.get("reason", "bounds_unavailable"),
+                                          "step_id": row["step_id"], "refno": row["refno"]})
+        review["targets"].append(row)
+
+    for first_index, first in enumerate(review["targets"]):
+        for second in review["targets"][first_index + 1:]:
+            comparison = compare_world_bounds(first, second)
+            pair = {"step_ids": [first["step_id"], second["step_id"]], **comparison}
+            review["pairs"].append(pair)
+            if comparison["status"] in {"contact_candidate", "overlap_candidate", "aabb_overlap_only"}:
+                review["diagnostics"].append({"code": comparison["status"], **pair})
+    review["available"] = bool(bounded)
+    review["complete"] = len(bounded) == len(review["targets"])
+    review["status"] = "complete" if review["complete"] else "partial"
+    return review
+
+
 def equipment_model_plan(bridge: BridgeClient, settings: Settings, args: dict[str, Any]) -> dict[str, Any]:
     request = _parameters(args)
     response: dict[str, Any] = {
@@ -671,6 +768,9 @@ def equipment_model_plan(bridge: BridgeClient, settings: Settings, args: dict[st
         "plan_only": True, "read_only": True, "writes_attempted": False,
         "model_writes": 0, "view_writes": 0, "commands": 0,
         "equipment_refno": request["equipment_refno"], "steps": [],
+        "spatial_review": {"requested": False, "available": False, "complete": False,
+            "status": "not_applicable", "targets": [], "pairs": [], "diagnostics": [],
+            "scope": SPATIAL_REVIEW_SCOPE},
         "context_consistency": {"status": "unknown", "atomic": False},
         "evidence": {}, "issues": [],
         "native_previews": {"requested": request["include_native_previews"],
@@ -927,7 +1027,9 @@ def equipment_model_plan(bridge: BridgeClient, settings: Settings, args: dict[st
                         str(spatial_result.get("type", "")).upper() != str(target.get("type", "")).upper():
                     item["unknowns"].append({"code": "target_world_pose_unavailable_or_identity_mismatch"})
                 else:
-                    item["target"]["world_pose"] = {"position": spatial_result.get("position"),
+                    item["target"]["world_pose"] = {"complete": spatial_result.get("complete"),
+                        "errors": spatial_result.get("errors"), "frame": spatial_result.get("frame"),
+                        "position": spatial_result.get("position"),
                         "orientation": spatial_result.get("orientation"),
                         "position_complete": spatial_result.get("position_complete"),
                         "orientation_complete": spatial_result.get("orientation_complete")}
@@ -1021,6 +1123,7 @@ def equipment_model_plan(bridge: BridgeClient, settings: Settings, args: dict[st
             "write_viability": "unknown"}
             for step in request["steps"] if step["step_id"].casefold() not in completed)
 
+    response["spatial_review"] = _spatial_review(bridge, request["steps"], response["steps"], response["evidence"])
     after = context_snapshot(bridge, settings)
     response["evidence"]["context_after"] = after
     bracket = _context_bracket(before, after)
@@ -1040,6 +1143,9 @@ def equipment_model_plan(bridge: BridgeClient, settings: Settings, args: dict[st
         bracket["status"] = "changed" if changed else "unknown"
     context_changed = bracket["status"] != "consistent"
     if context_changed:
+        if response["spatial_review"].get("requested") is True:
+            response["spatial_review"].update(available=False, complete=False, status="unknown",
+                targets=[], pairs=[], diagnostics=[{"code": "outer_context_changed_or_unverified"}])
         response["status"] = "unknown"
         for step in response["steps"]:
             step["status"] = "unknown"
@@ -1064,7 +1170,8 @@ def equipment_model_plan(bridge: BridgeClient, settings: Settings, args: dict[st
         _prepare_native_previews(bridge, settings, response, request["steps"], context_identity)
     response["plan_fingerprint"] = hashlib.sha256(json.dumps(
         {"request": request, "equipment_refno": request["equipment_refno"],
-         "session_id": context_identity.get("session_id"), "steps": response["steps"]},
+         "session_id": context_identity.get("session_id"), "steps": response["steps"],
+         "spatial_review": response["spatial_review"]},
         sort_keys=True, separators=(",", ":"), ensure_ascii=True, default=str).encode("utf-8")).hexdigest()
     response["plan_fingerprint_scope"] = "Advisory hash of this plan/evidence only; never accepted as expected_revision."
     return response
